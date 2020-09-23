@@ -5,7 +5,7 @@ transfer a style onto a photo
 """
 
 import torch
-from layers import Conv, UpConv, ResLayer
+from layers import Conv, UpConv, ResLayer, ShuffleLayer
 
 class ImageTransformer(torch.nn.Module):
     """ This is our main model, for fast NST, currently uses:
@@ -21,7 +21,8 @@ class ImageTransformer(torch.nn.Module):
                  norm_type='inst',
                  DWS=True,DWSFL=False,
                  outerK=3,resgroups=4,
-                 filters=[32,48,64]):
+                 filters=[32,48,64],
+                 shuffle=False):
         super().__init__()
         self.leak = leak
         if norm_type == 'batch':
@@ -39,13 +40,26 @@ class ImageTransformer(torch.nn.Module):
             norm_layer(filters[2], affine=True),
             torch.nn.LeakyReLU(leak),
         )
-        self.res_block = torch.nn.Sequential(
-            ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups),
-            ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups),
-            ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups),
-            ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups),
-            ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups)
-        )
+        if shuffle:
+            mids=filters[2] // 2
+            self.res_block = torch.nn.Sequential(
+                ShuffleLayer(filters[2],mids,leak=leak,norm_type=norm_type,groups=resgroups),
+                ShuffleLayer(filters[2],mids,leak=leak,norm_type=norm_type,groups=resgroups),
+                ShuffleLayer(filters[2],mids,leak=leak,norm_type=norm_type,groups=resgroups),
+                ShuffleLayer(filters[2],mids,leak=leak,norm_type=norm_type,groups=resgroups),
+                ShuffleLayer(filters[2],mids,leak=leak,norm_type=norm_type,groups=resgroups),
+                ShuffleLayer(filters[2],mids,leak=leak,norm_type=norm_type,groups=resgroups),
+                ShuffleLayer(filters[2],mids,leak=leak,norm_type=norm_type,groups=resgroups),
+                ShuffleLayer(filters[2],mids,leak=leak,norm_type=norm_type,groups=resgroups)
+            )
+        else:
+            self.res_block = torch.nn.Sequential(
+                ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups),
+                ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups),
+                ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups),
+                ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups),
+                ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups)
+            )
         self.up_conv = torch.nn.Sequential(
             UpConv(filters[2], filters[1], 4, 2, DWS=DWS),
             norm_layer(filters[1], affine=True),
