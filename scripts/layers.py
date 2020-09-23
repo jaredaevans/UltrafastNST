@@ -33,10 +33,21 @@ class ReflectPad2d(torch.nn.Module):
         u_list.append(ins)
         ins = torch.cat(u_list+d_list[::-1], dim=2)
         return ins
+
+
+def shuffle_v1(inputs,group):
+    """ Shuffle inputs for shuffle net v1 block """
+    batchsize, num_channels, height, width = inputs.data.size()
+    assert num_channels % group == 0
+    group_channels = num_channels // group    
+    inputs = inputs.reshape(batchsize, group_channels, group, height, width)
+    inputs = inputs.permute(0, 2, 1, 3, 4)
+    inputs = inputs.reshape(batchsize, num_channels, height, width)
+    return inputs
     
     
-def shuffle(inputs):
-    """ Shuffle inputs for shuffle net block """
+def shuffle_v2(inputs):
+    """ Shuffle inputs for shuffle net v2 block """
     batchsize, num_channels, height, width = inputs.data.size()
     assert (num_channels % 4 == 0)
     inputs = inputs.reshape(batchsize * num_channels // 2, 2, height * width)
@@ -50,14 +61,23 @@ class DWSConv(torch.nn.Module):
         and pointwise conv with no activation function in between
         optional grouping on the pointwise conv
     """
-    def __init__(self, ins, outs, kernel_size=3, stride=1, groups=1):
+    def __init__(self,ins,outs,kernel_size=3,stride=1,groups=1,dilation=1,
+                 norm_type='batch'):
         super().__init__()
-        self.depthwise = torch.nn.Conv2d(ins, ins, kernel_size, stride=stride, groups=ins)
-        self.pointwise = torch.nn.Conv2d(ins, outs, 1, groups=groups)
+        if norm_type == 'batch':
+            norm_layer = torch.nn.BatchNorm2d
+        else:
+            norm_layer = torch.nn.InstanceNorm2d
+        self.norm = norm_layer(ins, affine=True)
+        self.depthwise = torch.nn.Conv2d(ins, ins, kernel_size, stride=stride, 
+                                         groups=ins, dilation=dilation, 
+                                         bias=False)
+        self.pointwise = torch.nn.Conv2d(ins, outs, 1, groups=groups, 
+                                         bias=False)
 
     def forward(self, ins):
         """ forward pass """
-        return self.pointwise(self.depthwise(ins))
+        return self.pointwise(self.norm(self.depthwise(ins)))
 
 
 class DWSConvT(torch.nn.Module):
@@ -68,17 +88,23 @@ class DWSConvT(torch.nn.Module):
         Note: upsampling would be better, but issues with onnx / mlmodel
         padding and conversion
     """
-    def __init__(self, ins, outs, kernel_size=4, stride=2, padding=1, groups=1):
+    def __init__(self,ins,outs,kernel_size=4,stride=2,padding=1,
+                 groups=1,norm_type='batch'):
         super().__init__()
+        if norm_type == 'batch':
+            norm_layer = torch.nn.BatchNorm2d
+        else:
+            norm_layer = torch.nn.InstanceNorm2d
+        self.norm = norm_layer(ins, affine=True)
         self.depthwise = torch.nn.ConvTranspose2d(ins, ins, kernel_size,
                                                   stride=stride,
                                                   padding=padding,
-                                                  groups=ins)
-        self.pointwise = torch.nn.Conv2d(ins, outs, 1, groups=groups)
+                                                  groups=ins, bias=False)
+        self.pointwise = torch.nn.Conv2d(ins, outs, 1, groups=groups, bias=False)
 
     def forward(self, ins):
         """ forward pass """
-        return self.pointwise(self.depthwise(ins))
+        return self.pointwise(self.norm(self.depthwise(ins)))
 
 
 class Swish(torch.nn.Module):
@@ -94,18 +120,20 @@ class Swish(torch.nn.Module):
 class Conv(torch.nn.Module):
     """ Conv layer with reflection or zero padding """
     def __init__(self,ins,outs,kernel_size=3,stride=1,padding='ref',
-                 DWS=False,groups=1):
+                 DWS=False,groups=1,dilation=1,norm_type='batch'):
         assert kernel_size % 2 == 1
         super().__init__()
-        padding_size = kernel_size // 2
+        padding_size = (kernel_size // 2)*dilation
         #self.pad = torch.nn.ReflectionPad2d(padding_size)
         self.pad = ReflectPad2d(padding_size)
         if padding == 'zero':
             self.pad = torch.nn.ZeroPad2d()(padding_size)
-        self.conv2d = torch.nn.Conv2d(ins, outs, kernel_size, stride, bias=False)
+        self.conv2d = torch.nn.Conv2d(ins, outs, kernel_size, stride, 
+                                      dilation=dilation,bias=False)
         if DWS:
             self.conv2d = DWSConv(ins, outs, kernel_size, stride, 
-                                  groups=groups, bias=False)
+                                  groups=groups,dilation=dilation,
+                                  norm_type=norm_type)
 
     def forward(self, ins):
         """ forward pass """
@@ -120,14 +148,15 @@ class UpConv(torch.nn.Module):
         worse for checkerboard artifacts - revisit with coreml version update
     """
     def __init__(self, ins, outs, kernel_size=4, upsample=2, padding='ref',
-                 DWS=False, groups=1):
+                 DWS=False, groups=1,norm_type='batch'):
         super().__init__()
         self.conv2d = torch.nn.ConvTranspose2d(ins, outs, kernel_size, 
                                                stride=upsample, padding=1, 
                                                bias=False)
         if DWS:
             self.conv2d = DWSConvT(ins, outs, kernel_size, stride=upsample,
-                                   padding=1, groups=groups, bias=False)
+                                   padding=1, groups=groups,
+                                   norm_type=norm_type)
 
     def forward(self, ins):
         """ forward pass """
@@ -156,10 +185,12 @@ class ResLayer(torch.nn.Module):
             norm_layer = torch.nn.BatchNorm2d
         else:
             norm_layer = torch.nn.InstanceNorm2d
-        self.conv1 = Conv(channels,channels,kernel_size,DWS=DWS, groups=groups)
+        self.conv1 = Conv(channels,channels,kernel_size,DWS=DWS, groups=groups,
+                          norm_type=norm_type)
         self.norm1 = norm_layer(channels, affine=True)
         self.relu = torch.nn.LeakyReLU(leak)
-        self.conv2 = Conv(channels,channels,kernel_size,DWS=DWS)
+        self.conv2 = Conv(channels,channels,kernel_size,DWS=DWS,
+                          norm_type=norm_type)
         self.norm2 = norm_layer(channels, affine=True)
 
     def forward(self, ins):
@@ -205,15 +236,43 @@ class Layer131(torch.nn.Module):
 
 
 class ShuffleLayer(torch.nn.Module):
+    """ Basic shuffle layer with 1-3-1 bottleneck layer """
     def __init__(self,channels,mids,kernel_size=3, 
                  leak=0.05,norm_type='batch',groups=1):
         super().__init__()
-        self.main_branch = Layer131(channels,kernel_size,leak=leak,
-                                    norm_type=norm_type,groups=1)
+        self.main_branch = Layer131(channels // 2,kernel_size,leak=leak,
+                                    norm_type=norm_type,groups=groups)
 
     def forward(self, old_x):
-        x_proj, x = shuffle(old_x)
-        return torch.cat((x_proj, self.branch_main(x)), 1)
+        x_proj, x = shuffle_v2(old_x)
+        return torch.cat((x_proj, self.main_branch(x)), 1)
+
+
+class ResShuffleLayer(torch.nn.Module):
+    """ Basic residual layer to import into ImageTransformer
+    """
+    def __init__(self,channels,kernel_size=3,leak=0.05,norm_type='batch',
+                 DWS=False, groups=1,dilation=1):
+        super().__init__()
+        if norm_type == 'batch':
+            norm_layer = torch.nn.BatchNorm2d
+        else:
+            norm_layer = torch.nn.InstanceNorm2d
+        self.conv1 = Conv(channels,channels,kernel_size,DWS=DWS,groups=groups,
+                          dilation=dilation,norm_type=norm_type)
+        self.norm1 = norm_layer(channels, affine=True)
+        self.relu = torch.nn.LeakyReLU(leak)
+        self.conv2 = Conv(channels,channels,kernel_size,DWS=DWS, groups=groups,
+                          norm_type=norm_type)
+        self.norm2 = norm_layer(channels, affine=True)
+        self.groups = groups
+
+    def forward(self, ins):
+        """ forward pass """
+        res = ins
+        out = self.relu(self.norm1(self.conv1(ins)))
+        out = self.norm2(self.conv2(out))
+        return shuffle_v1(self.relu(out + res),self.groups)
 
 
 class ResBottle(torch.nn.Module):
