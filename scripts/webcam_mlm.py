@@ -36,11 +36,10 @@ def stylize_video(): #save_vid=False:
     times = [0, 0, 0]
     count = 0
 
-    models_list = [
-        "metzinger_bird", "kandinsky_composition", "delauney_rythme",
-        "monet_blue", "Wadsworth_dazzleships", "gorky_artichoke",
-        "vanDoesburg_CompositionI", "bruegel_babel", "gorky_liver",
-        "taeuber-arp_composition", "cole_deluge"
+    models_list = ["scream_bench_D",
+        "scream_bench_B", "scream_bench_C", "scream_bench_D",  
+        "bird_bench_B", "bird_bench_C", "bird_bench_D", 
+        "comp7_bench_B","comp7_bench_C",
     ]
     num_models = len(models_list)
     model_id = 0
@@ -61,7 +60,7 @@ def stylize_video(): #save_vid=False:
         count += 1
 
         t1 = time.time()
-        bgrimg = cv2.resize(bgrimg, (320, 240))
+        bgrimg = cv2.resize(bgrimg, (320, 240), interpolation=cv2.INTER_AREA)
         bgrimg = flip(bgrimg, axis=1)
         img = cv2.cvtColor(bgrimg, cv2.COLOR_BGR2RGB).astype(np.float)
         img /= 255.0
@@ -71,7 +70,7 @@ def stylize_video(): #save_vid=False:
         t2 = time.time()
         # stylize image
         sty = np.array(
-            model.predict({"data": transforms.ToPILImage()(img_t)})['553'])[0]
+            model.predict({"data": transforms.ToPILImage()(img_t)})['983'])[0]
         t3 = time.time()
 
         sty += 1.0
@@ -79,7 +78,8 @@ def stylize_video(): #save_vid=False:
         sty = clip(np.moveaxis(sty, 0, -1), 0, 1)
         stybgr = cv2.cvtColor(sty, cv2.COLOR_RGB2BGR)
 
-        cv2.imshow("video", stybgr)
+        cv2.imshow("video", cv2.resize(stybgr,(640,480), 
+                                       interpolation=cv2.INTER_LINEAR))
 
         times[0] += t2 - t1
         times[1] += t3 - t2

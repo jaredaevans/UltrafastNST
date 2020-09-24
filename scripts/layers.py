@@ -142,6 +142,32 @@ class Conv(torch.nn.Module):
         return out
 
 
+class Conv1stLayer(torch.nn.Module):
+    """ Conv layer with reflection or zero padding """
+    def __init__(self,ins,outs,kernel_size=3,stride=1,padding='ref',
+                 DWS=False,groups=1,dilation=1,norm_type='batch'):
+        assert kernel_size % 2 == 1
+        super().__init__()
+        padding_size = (kernel_size // 2)*dilation
+        #self.pad = torch.nn.ReflectionPad2d(padding_size)
+        self.DWS = DWS
+        self.pad = ReflectPad2d(padding_size)
+        if padding == 'zero':
+            self.pad = torch.nn.ZeroPad2d()(padding_size)
+        self.conv2d = torch.nn.Conv2d(ins, outs, kernel_size, stride, 
+                                      dilation=dilation,bias=False)
+        if DWS:
+            self.conv2d = torch.nn.Conv2d(ins,outs,1,groups=1,bias=False)
+
+    def forward(self, ins):
+        """ forward pass """
+        if self.DWS:
+            out = ins
+        else:
+            out = self.pad(ins)
+        out = self.conv2d(out)
+        return out
+
 class UpConv(torch.nn.Module):
     """ Up sample conv layer with zero padding
         note: conv transpose is used as this is compatible with coremltools
@@ -262,7 +288,7 @@ class ResShuffleLayer(torch.nn.Module):
                           dilation=dilation,norm_type=norm_type)
         self.norm1 = norm_layer(channels, affine=True)
         self.relu = torch.nn.LeakyReLU(leak)
-        self.conv2 = Conv(channels,channels,kernel_size,DWS=DWS, groups=groups,
+        self.conv2 = Conv(channels,channels,kernel_size,DWS=DWS,groups=groups,
                           norm_type=norm_type)
         self.norm2 = norm_layer(channels, affine=True)
         self.groups = groups
