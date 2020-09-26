@@ -22,8 +22,10 @@ class ImageTransformer(torch.nn.Module):
                  DWS=True,DWSFL=False,
                  outerK=3,resgroups=4,
                  filters=[32,48,64],
-                 shuffle=False,
-                 endgroups=(1,1)):
+                 shuffle=True,
+                 blocks=[1,2,1,2,1,2,1,1],
+                 endgroups=(1,1),
+                 bias_ll=True):
         super().__init__()
         self.leak = leak
         if norm_type == 'batch':
@@ -42,32 +44,26 @@ class ImageTransformer(torch.nn.Module):
             torch.nn.LeakyReLU(leak),
         )
         if shuffle:
-            self.res_block = torch.nn.Sequential(
-                ResShuffleLayer(filters[2],leak=leak,norm_type=norm_type,
-                                DWS=DWS,groups=resgroups,dilation=1),
-                ResShuffleLayer(filters[2],leak=leak,norm_type=norm_type,
-                                DWS=DWS,groups=resgroups,dilation=2),
-                ResShuffleLayer(filters[2],leak=leak,norm_type=norm_type,
-                                DWS=DWS,groups=resgroups,dilation=1),
-                ResShuffleLayer(filters[2],leak=leak,norm_type=norm_type,
-                                DWS=DWS,groups=resgroups,dilation=2),
-                ResShuffleLayer(filters[2],leak=leak,norm_type=norm_type,
-                                DWS=DWS,groups=resgroups,dilation=1),
-                ResShuffleLayer(filters[2],leak=leak,norm_type=norm_type,
-                                DWS=DWS,groups=resgroups,dilation=2),
-                ResShuffleLayer(filters[2],leak=leak,norm_type=norm_type,
-                                DWS=DWS,groups=resgroups,dilation=1),
-                ResShuffleLayer(filters[2],leak=leak,norm_type=norm_type,
-                                DWS=DWS,groups=resgroups,dilation=1)
-            )
+            self.res_block = torch.nn.Sequential()
+            i=0
+            for block in blocks:
+                self.res_block.add_module(str(i),ResShuffleLayer(filters[2],
+                                                          leak=leak,
+                                                          norm_type=norm_type,
+                                                          DWS=DWS,
+                                                          groups=resgroups,
+                                                          dilation=block))
+                i += 1
         else:
-            self.res_block = torch.nn.Sequential(
-                ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups),
-                ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups),
-                ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups),
-                ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups),
-                ResLayer(filters[2],leak=leak,norm_type=norm_type,DWS=DWS,groups=resgroups)
-            )
+            self.res_block = torch.nn.Sequential()
+            i=0
+            for block in blocks:
+                self.res_block.add_module(str(i),ResLayer(filters[2],
+                                                          leak=leak,
+                                                          norm_type=norm_type,
+                                                          DWS=DWS,
+                                                          groups=resgroups))
+                i += 1
         self.up_conv = torch.nn.Sequential(
             UpConv(filters[2], filters[1], 4, 2, DWS=DWS,groups=endgroups[1]),
             norm_layer(filters[1], affine=True),
@@ -75,7 +71,7 @@ class ImageTransformer(torch.nn.Module):
             UpConv(filters[1], filters[0], 4, 2, DWS=DWS,groups=endgroups[0]),
             norm_layer(filters[0], affine=True),
             torch.nn.LeakyReLU(leak),
-            Conv(filters[0], 3, outerK, 1, DWS=DWSFL)
+            Conv(filters[0], 3, outerK, 1, DWS=DWSFL, bias=bias_ll)
         )
         self.transformer = torch.nn.Sequential(self.down_conv,
                                                self.res_block,

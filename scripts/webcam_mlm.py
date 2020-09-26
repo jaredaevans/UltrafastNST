@@ -20,7 +20,7 @@ import torchvision.transforms as transforms
 import onnx
 from coremltools.models import MLModel
 
-from ImageTransformer import ImageTransformer
+#from ImageTransformer import ImageTransformer
 
 
 def stylize_video(): #save_vid=False:
@@ -36,14 +36,20 @@ def stylize_video(): #save_vid=False:
     times = [0, 0, 0]
     count = 0
 
-    models_list = ["scream_bench_D",
-        "scream_bench_B", "scream_bench_C", "scream_bench_D",  
-        "bird_bench_B", "bird_bench_C", "bird_bench_D", 
-        "comp7_bench_B","comp7_bench_C",
+    models_list = ["scream_bench_D", 
+                   "bird_bench_D", 
+                   "jazzcups_D",
+                   "dazzleships_D",
+                   "delauney_rythme_D",
+                   "monet_blue_D",
+                   "scream_bench_B", 
+                   "scream_bench_C", #"scream_bench_D",  
+                   "bird_bench_B", #"bird_bench_C", "bird_bench_D", 
+        #"comp7_bench_B","comp7_bench_C","comp7_bench_D",
     ]
     num_models = len(models_list)
     model_id = 0
-    model_tail = "_linear_8.mlmodel"
+    model_tail = "_linear_16.mlmodel"
 
     # Load torch model
     model_base = models_list[model_id]

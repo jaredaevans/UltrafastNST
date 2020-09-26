@@ -62,7 +62,7 @@ class DWSConv(torch.nn.Module):
         optional grouping on the pointwise conv
     """
     def __init__(self,ins,outs,kernel_size=3,stride=1,groups=1,dilation=1,
-                 norm_type='batch'):
+                 norm_type='batch',bias=False):
         super().__init__()
         if norm_type == 'batch':
             norm_layer = torch.nn.BatchNorm2d
@@ -73,7 +73,7 @@ class DWSConv(torch.nn.Module):
                                          groups=ins, dilation=dilation, 
                                          bias=False)
         self.pointwise = torch.nn.Conv2d(ins, outs, 1, groups=groups, 
-                                         bias=False)
+                                         bias=bias)
 
     def forward(self, ins):
         """ forward pass """
@@ -120,7 +120,8 @@ class Swish(torch.nn.Module):
 class Conv(torch.nn.Module):
     """ Conv layer with reflection or zero padding """
     def __init__(self,ins,outs,kernel_size=3,stride=1,padding='ref',
-                 DWS=False,groups=1,dilation=1,norm_type='batch'):
+                 DWS=False,groups=1,dilation=1,norm_type='batch',
+                 bias=False):
         assert kernel_size % 2 == 1
         super().__init__()
         padding_size = (kernel_size // 2)*dilation
@@ -129,11 +130,11 @@ class Conv(torch.nn.Module):
         if padding == 'zero':
             self.pad = torch.nn.ZeroPad2d()(padding_size)
         self.conv2d = torch.nn.Conv2d(ins, outs, kernel_size, stride, 
-                                      dilation=dilation,bias=False)
+                                      dilation=dilation,bias=bias)
         if DWS:
             self.conv2d = DWSConv(ins, outs, kernel_size, stride, 
                                   groups=groups,dilation=dilation,
-                                  norm_type=norm_type)
+                                  norm_type=norm_type,bias=bias)
 
     def forward(self, ins):
         """ forward pass """
@@ -168,6 +169,7 @@ class Conv1stLayer(torch.nn.Module):
         out = self.conv2d(out)
         return out
 
+
 class UpConv(torch.nn.Module):
     """ Up sample conv layer with zero padding
         note: conv transpose is used as this is compatible with coremltools
@@ -187,6 +189,36 @@ class UpConv(torch.nn.Module):
     def forward(self, ins):
         """ forward pass """
         return self.conv2d(ins)
+
+
+class UpConvUS(torch.nn.Module):
+    """ Up sample conv layer with padding using upsampling """
+    def __init__(self, ins, outs, kernel_size=3, upsample=2, padding='ref',
+                 DWS=False, groups=1,norm_type='batch'):
+        assert kernel_size % 2 == 1
+        super().__init__()
+        padding_size = kernel_size // 2
+        self.pad = torch.nn.ReflectionPad2d(padding_size)
+        #self.pad = ReflectPad2d_rev(padding_size)
+        if padding == 'zero':
+            self.pad = torch.nn.ZeroPad2d()(padding_size)
+        self.conv2d = torch.nn.Conv2d(ins,outs,kernel_size,stride=1,bias=False)
+        if DWS:
+            self.conv2d = DWSConv(ins, outs, kernel_size,
+                                  groups=groups,
+                                  norm_type=norm_type)
+        self.upsample = upsample
+
+    def forward(self, x):
+        out = x
+        # upsample, then apply conv
+        if self.upsample:
+            # Note: float needed for scale in order to be compatible with jit
+            out = torch.nn.functional.interpolate(out, mode='nearest', 
+                                                  scale_factor=float(self.upsample))
+        out = self.pad(out)
+        out = self.conv2d(out)
+        return out
 
 
 class SE(torch.nn.Module):
