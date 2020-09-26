@@ -5,9 +5,48 @@
 """
 
 import torch
+import matplotlib.pyplot as plt
 
 from vgg19 import build_vgg19, get_vgg19_content
 from losses import GetContentLoss
+
+
+def prepandclip(img):
+    return img.squeeze().data.clamp_(-1, 1).cpu().detach()
+
+
+def show_test_image_quality(model, image, device):
+    """
+    Parameters
+    ----------
+    model : image transformer
+    image : test image in PIL -> torch.tensor format
+    device : cpu or GPU
+    Returns
+    -------
+    Prints original image beside stylized image
+    """
+    model_input = image.clone() 
+    image = (image.squeeze(0).to(torch.device("cpu")).permute(1,2,0)+1.)/2
+    plt.subplot(121)
+    plt.imshow(image)
+    plt.axis('off')
+    plt.title('input')
+    # stylize
+    with torch.no_grad():
+        model_input = model_input.to(device)
+        model_output = model(model_input)
+    output = prepandclip(model_output)
+    output = (output.to(torch.device("cpu")).permute(1,2,0)+1.)/2
+    # styled plot
+    plt.subplot(122)
+    plt.imshow(output)
+    plt.axis('off')
+    plt.title('output')
+    # show figure
+    plt.tight_layout()
+    plt.show()
+
 
 class Trainer():
     """ Stylization trainer """
@@ -107,9 +146,10 @@ class Trainer():
             history['val_var_loss'].append((val_losses[2])/vk)
             
             
-    def train(self, data,  val=None, epochs = 1000, style_weight=10000,content_weight=1,
-              tv_weight=100, cs_weight=10000, num_workers=0,batch_size=4, epoch_show = 20, 
-              lr = 0.01, best_path = "best_run.pth", es_patience = 5):
+    def train(self,data,val=None,epochs = 1000,style_weight=10000,
+              content_weight=1,tv_weight=100, cs_weight=10000, num_workers=0,
+              batch_size=4,epoch_show = 20,lr=0.01,best_path="best.pth",
+              es_patience=5,test_image=None,test_im_show=5):
         """ main training function """
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -163,12 +203,17 @@ class Trainer():
                             inputs, content = image_dat
                             loss = self.step(inputs,val_losses)
                             vk = i
-                        self.update_history(history, epoch, running_losses, k, val_losses, vk)
+                        self.update_history(history,epoch,running_losses,k,
+                                            val_losses, vk)
                         vl_cur = (val_losses[0] + val_losses[1] + val_losses[2] + val_losses[3])/vk             
                         if vl_cur < vl_best:
                             vl_best = vl_cur
                             torch.save(self.transformer.state_dict(), best_path)
                             es = 0
+                        if test_image is not None:
+                            if epoch % test_im_show == test_im_show - 1:
+                                show_test_image_quality(self.transformer,
+                                                        test_image,self.device)
                         if es >= es_patience:
                             print("No improvement for {} epochs, ceasing training".format(es_patience))
                             break
