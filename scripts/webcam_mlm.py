@@ -22,6 +22,13 @@ from coremltools.models import MLModel
 
 #from ImageTransformer import ImageTransformer
 
+def layertag(idkey):
+    if idkey=='B' or idkey=='C' or idkey=='D':
+        return '983'
+    elif idkey=='b':
+        return '1058'
+    else:
+        return '974'
 
 def stylize_video(): #save_vid=False:
 
@@ -35,16 +42,29 @@ def stylize_video(): #save_vid=False:
 
     times = [0, 0, 0]
     count = 0
+    
+    # fps text info
+    font = cv2.FONT_HERSHEY_TRIPLEX
+    org = (220, 230) 
+    fontScale = 0.5
+    color = (0, 0.5, 0.8) 
 
-    models_list = ["scream_bench_D", 
-                   "bird_bench_D", 
+    models_list = ["bird_bench_Db", 
+                   "scream_bench_D", 
                    "jazzcups_D",
                    "dazzleships_D",
                    "delauney_rythme_D",
                    "monet_blue_D",
                    "scream_bench_B", 
                    "scream_bench_C", #"scream_bench_D",  
-                   "bird_bench_B", #"bird_bench_C", "bird_bench_D", 
+                   "bird_bench_B",
+                   "scream_bench_I", 
+                   "bird_bench_I", 
+                   "comp7_bench_I",
+                   "scream_bench_J", 
+                   "bird_bench_J", 
+                   "comp7_bench_J", 
+                   #"bird_bench_C", "bird_bench_D", 
         #"comp7_bench_B","comp7_bench_C","comp7_bench_D",
     ]
     num_models = len(models_list)
@@ -57,7 +77,13 @@ def stylize_video(): #save_vid=False:
     print("Loading: " + stored_file)
     model = MLModel(stored_file)
 
+    timelist = []
+    
     t0 = time.time()
+    timelist.append(t0)
+    
+    idkey = model_base[-1]
+    layerval = layertag(idkey)
 
     while cap.isOpened():
         ret, bgrimg = cap.read()
@@ -76,13 +102,20 @@ def stylize_video(): #save_vid=False:
         t2 = time.time()
         # stylize image
         sty = np.array(
-            model.predict({"data": transforms.ToPILImage()(img_t)})['983'])[0]
+            model.predict({"data": transforms.ToPILImage()(img_t)})[layerval])[0]
         t3 = time.time()
+        timelist.append(t3)
 
         sty += 1.0
         sty *= 0.5
         sty = clip(np.moveaxis(sty, 0, -1), 0, 1)
         stybgr = cv2.cvtColor(sty, cv2.COLOR_RGB2BGR)
+        nf = len(timelist)
+        if nf > 3:
+            text = "fps: {:0.4g}".format(nf/(timelist[-1]-timelist[0]))
+            stybgr = cv2.putText(stybgr,text,org,font,fontScale,color) 
+            if nf > 10:
+                timelist = timelist[1:]
 
         cv2.imshow("video", cv2.resize(stybgr,(640,480), 
                                        interpolation=cv2.INTER_LINEAR))
@@ -104,6 +137,8 @@ def stylize_video(): #save_vid=False:
             stored_file = model_base + model_tail
             print("Loading: " + stored_file)
             model = MLModel(stored_file)
+            idkey = model_base[-1]
+            layerval = layertag(idkey)
         elif keypress == ord('a'):
             # a to load the previous model
             model_id -= 1
@@ -113,6 +148,8 @@ def stylize_video(): #save_vid=False:
             stored_file = model_base + model_tail
             print("Loading: " + stored_file)
             model = MLModel(stored_file)
+            idkey = model_base[-1]
+            layerval = layertag(idkey)
 
     print("fps = {} - prep {}, eval {}, post {}".format(
         count / (time.time() - t0), times[0], times[1], times[2]))

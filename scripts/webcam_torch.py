@@ -33,6 +33,13 @@ def stylize_video(): #save_vid=False:
 
     times = [0, 0, 0]
     count = 0
+    
+    # fps text info
+    font = cv2.FONT_HERSHEY_TRIPLEX
+    org = (220, 230) 
+    fontScale = 0.5
+    color = (0, 0.5, 0.8) 
+
 
     models_list = ["../../benches/bird_bench_Db", 
                    "../../benches/bird_bench_Db", 
@@ -60,8 +67,10 @@ def stylize_video(): #save_vid=False:
     model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
     model.eval()
     
-    t0 = time.time()
+    timelist = []
     
+    t0 = time.time()
+    timelist.append(t0)
     while cap.isOpened():
         ret, bgrimg = cap.read()
         if not ret:
@@ -81,16 +90,24 @@ def stylize_video(): #save_vid=False:
         # stylize image
         sty = model(img_t)
         t3 = time.time()
+        timelist.append(t3)
 
         sty = sty.squeeze().data.clamp_(-1, 1).permute(1,2,0).numpy()
         sty += 1.0
         sty *= 0.5
         sty = clip(sty,0,1)
         stybgr = cv2.cvtColor(sty, cv2.COLOR_RGB2BGR)
-
+        
+        nf = len(timelist)
+        if nf > 3:
+            text = "fps: {:0.4g}".format(nf/(timelist[-1]-timelist[0]))
+            stybgr = cv2.putText(stybgr,text,org,font,fontScale,color) 
+            if nf > 10:
+                timelist = timelist[1:]
+        
         cv2.imshow("video", cv2.resize(stybgr,(640,480), 
                                        interpolation=cv2.INTER_LINEAR))
-
+        
         times[0] += t2 - t1
         times[1] += t3 - t2
         times[2] += time.time() - t3
