@@ -112,7 +112,7 @@ def stylize_video(): #save_vid=False:
         stybgr = cv2.cvtColor(sty, cv2.COLOR_RGB2BGR)
         nf = len(timelist)
         if nf > 3:
-            text = "fps: {:0.4g}".format(nf/(timelist[-1]-timelist[0]))
+            text = "fps: {:0.3g}".format((nf-1)/(timelist[-1]-timelist[0]))
             stybgr = cv2.putText(stybgr,text,org,font,fontScale,color) 
             if nf > 10:
                 timelist = timelist[1:]

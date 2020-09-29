@@ -13,13 +13,58 @@ from numpy import flip, clip
 
 from ImageTransformer import ImageTransformer
 
-def layertag(idkey):
-    if idkey=='B' or idkey=='C' or idkey=='D':
-        return '983'
-    elif idkey=='b':
-        return '1058'
+def build_model(idkey):
+    """
+    Default parameters:
+    ImageTransformer(leak=0.05,
+                    norm_type='batch',
+                    DWS=True,
+                    DWSFL=False,
+                    outerK=3,
+                    resgroups=4,
+                    filters=[8,12,16],
+                    shuffle=True,
+                    blocks=[1,2,1,2,1,2,1,1],
+                    endgroups=(1,1),
+                    upkern=4,
+                    bias_ll=True)
+
+    """
+    if idkey=='Db':
+        return ImageTransformer()
+    elif idkey=='Db_q':
+        return ImageTransformer()
+    elif idkey=='K':
+        return ImageTransformer(blocks=[2,2,2,2,1,1],endgroups=(2,2))
+    elif idkey=='L':
+        return ImageTransformer(blocks=[2,2,2,2,2,2,2,2],endgroups=(2,2))
+    elif idkey=='M':
+        return ImageTransformer(blocks=[3,3,2,2,1,1],endgroups=(2,2))
+    elif idkey=='N':
+        return ImageTransformer(blocks=[1,1,1,1,1,1],endgroups=(2,2))
+    elif idkey=='O':
+        return ImageTransformer(blocks=[2,2,2,2,2,2,1,1],endgroups=(1,2))
+    elif idkey=='P':
+        return ImageTransformer()
+    elif idkey=='Q':
+        return ImageTransformer(blocks=[2,2,2,2,2,1,1])
+    elif idkey=='R':
+        return ImageTransformer(blocks=[2,2,2,1,1,1])
+    elif idkey=='S':
+        return ImageTransformer(leak=0,upkern=3,blocks=[2,2,2,1,1,1])
+    elif idkey=='T':
+        return ImageTransformer(leak=0,upkern=3,blocks=[2,2,2,2,1,1,1,1])
     else:
-        return '974'
+        return ImageTransformer()
+    
+def quantize_model(image_transformer):
+    """ Convert model to quantized version """
+    image_transformer.qconfig = torch.quantization.get_default_qconfig('fbgemm')
+    # insert observers
+    torch.quantization.prepare(image_transformer, inplace=True)
+    # Calibrate the model and collect statistics
+    # convert to quantized version
+    torch.quantization.convert(image_transformer, inplace=True)
 
 def stylize_video(): #save_vid=False:
 
@@ -39,31 +84,28 @@ def stylize_video(): #save_vid=False:
     org = (220, 230) 
     fontScale = 0.5
     color = (0, 0.5, 0.8) 
+    
+    isHalf = False
 
-
-    models_list = ["../../benches/bird_bench_Db", 
-                   "../../benches/bird_bench_Db", 
-                   "../../benches/bird_bench_Db", 
-                   #"bird_bench_C", "bird_bench_D", 
-        #"comp7_bench_B","comp7_bench_C","comp7_bench_D",
-    ]
+    bench_list = ["../../benches/bird_bench_", 
+                   "../../benches/comp7_bench_", 
+                   "../../benches/scream_bench_"]
+    num_benches = len(bench_list)
+    bench_id = 0
+    
+    models_list = ["Db", "K", "L", "M", "N", "O", "P", "Q", "R", "S"]
     num_models = len(models_list)
     model_id = 0
+    
     model_tail = ".pth"
 
     # Load torch model
+    bench_base = bench_list[bench_id]
     model_base = models_list[model_id]
-    stored_file = model_base + model_tail
+    stored_file = bench_base + model_base + model_tail
     print("Loading: " + stored_file)
-    model = ImageTransformer(leak=0.05,
-                             norm_type='batch',
-                             DWS=True,DWSFL=False,
-                             outerK=3,resgroups=4,
-                             filters=[8,12,16],
-                             shuffle=True,
-                             blocks=[1,2,1,2,1,2,1,1],
-                             endgroups=(1,1),
-                             bias_ll=True)
+    
+    model = build_model(model_base)
     model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
     model.eval()
     
@@ -84,7 +126,11 @@ def stylize_video(): #save_vid=False:
         img /= 127.5  # 0 - 255 to 0.0 - 2.0
         img -= 1 # 0.0 - 2.0  to -1.0 to 1.0
         # convert to torch tensor
-        img_t = torch.tensor(img).permute(2,0,1).unsqueeze(0).to(torch.float)
+        if isHalf:
+            dtype = torch.float16
+        else:
+            dtype = torch.float
+        img_t = torch.tensor(img).permute(2,0,1).unsqueeze(0).to(dtype)
 
         t2 = time.time()
         # stylize image
@@ -100,7 +146,7 @@ def stylize_video(): #save_vid=False:
         
         nf = len(timelist)
         if nf > 3:
-            text = "fps: {:0.4g}".format(nf/(timelist[-1]-timelist[0]))
+            text = "fps: {:0.3g}".format((nf-1)/(timelist[-1]-timelist[0]))
             stybgr = cv2.putText(stybgr,text,org,font,fontScale,color) 
             if nf > 10:
                 timelist = timelist[1:]
@@ -122,19 +168,54 @@ def stylize_video(): #save_vid=False:
             if model_id >= num_models:
                 model_id = 0
             model_base = models_list[model_id]
-            stored_file = model_base + model_tail
+            stored_file = bench_base + model_base + model_tail
             print("Loading: " + stored_file)
+            model = build_model(model_base)
+            if model_base[-1] == "q":
+                quantize_model(model)
+            elif model_base[-1] == "h":
+                model.half()
+                isHalf = True
+            else:
+                isHalf = False
             model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
+            model.eval()    
         elif keypress == ord('a'):
             # a to load the previous model
             model_id -= 1
             if model_id < 0:
                 model_id = num_models - 1
             model_base = models_list[model_id]
-            stored_file = model_base + model_tail
+            stored_file = bench_base + model_base + model_tail
+            print("Loading: " + stored_file)
+            model = build_model(model_base)
+            if model_base[-1] == "q":
+                quantize_model(model)
+            elif model_base[-1] == "h":
+                model.half()
+                isHalf = True
+            else:
+                isHalf = False
+            model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
+            model.eval() 
+        elif keypress == ord('w'):
+            bench_id += 1 
+            if bench_id >= num_benches:
+                bench_id = 0
+            bench_base = bench_list[bench_id]
+            stored_file = bench_base + model_base + model_tail
             print("Loading: " + stored_file)
             model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
-
+            model.eval()
+        elif keypress == ord('s'):
+            bench_id -= 1 
+            if bench_id < 0:
+                bench_id = num_benches - 1
+            bench_base = bench_list[bench_id]
+            stored_file = bench_base + model_base + model_tail
+            print("Loading: " + stored_file)
+            model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
+            model.eval() 
     print("fps = {} - prep {}, eval {}, post {}".format(
         count / (time.time() - t0), times[0], times[1], times[2]))
     cap.release()

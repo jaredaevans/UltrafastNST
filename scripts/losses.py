@@ -33,7 +33,8 @@ class StyleLoss(nn.Module):
         """ forward pass """
         gram = gram_matrix(input)
         batch_size = gram.shape[0]
-        self.loss = F.mse_loss(
+        #self.loss = F.mse_loss(
+        self.loss = F.l1_loss(
             gram.squeeze(),
             self.target.repeat(batch_size, 1, 1, 1).squeeze())
         return input

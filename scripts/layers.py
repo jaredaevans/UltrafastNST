@@ -246,7 +246,11 @@ class ResLayer(torch.nn.Module):
         self.conv1 = Conv(channels,channels,kernel_size,DWS=DWS, groups=groups,
                           norm_type=norm_type)
         self.norm1 = norm_layer(channels, affine=True)
-        self.relu = torch.nn.LeakyReLU(leak)
+        self.leak = leak
+        if leak == 0:
+            self.relu = torch.nn.ReLU(inplace=True)
+        else:
+            self.relu = torch.nn.LeakyReLU(leak)
         self.conv2 = Conv(channels,channels,kernel_size,DWS=DWS,
                           norm_type=norm_type)
         self.norm2 = norm_layer(channels, affine=True)
@@ -261,10 +265,10 @@ class ResLayer(torch.nn.Module):
 
 class Layer131(torch.nn.Module):
     """ 1-3-1 residual layer to import into ImageTransformer
-        key component of shufflenet
+        key component of shufflenetv2 and mobilenet v2
     """
-    def __init__(self,ins,mids,kernel_size=3,leak=0.05,norm_type='batch',
-                 groups=1):
+    def __init__(self,ins,outs,mids,kernel_size=3,leak=0.05,norm_type='batch',
+                 groups=1,dilation=1):
         super().__init__()
         if norm_type == 'batch':
             norm_layer = torch.nn.BatchNorm2d
@@ -276,21 +280,27 @@ class Layer131(torch.nn.Module):
         self.firstlayer = torch.nn.Conv2d(ins, mids, 1, 
                                           groups=groups, bias=False)
         self.depthwise = torch.nn.Conv2d(mids, mids, kernel_size, 
-                                         groups=mids, bias=False)
-        self.pointwise = torch.nn.Conv2d(mids, ins, 1, 
+                                         groups=mids, bias=False,
+                                         dilation=dilation)
+        self.pointwise = torch.nn.Conv2d(mids, outs, 1, 
                                          groups=groups, bias=False)
-        self.relu1 = torch.nn.LeakyReLU(leak)
-        self.relu2 = torch.nn.LeakyReLU(leak)
+        self.leak = leak
+        if leak == 0:
+            self.relu1 = torch.nn.ReLU(inplace=True)
+            self.relu2 = torch.nn.ReLU(inplace=True)
+        else:
+            self.relu1 = torch.nn.LeakyReLU(leak)
+            self.relu2 = torch.nn.LeakyReLU(leak)
         self.norm1 = norm_layer(mids, affine=True)
         self.norm2 = norm_layer(mids, affine=True)
-        self.norm3 = norm_layer(ins, affine=True)
+        self.norm3 = norm_layer(outs, affine=True)
 
 
     def forward(self, ins):
         """ forward pass """
         out = self.relu1(self.norm1(self.firstlayer(ins)))
-        out = self.norm2(self.depthwise(self.pad(out)))
-        return self.relu2(self.norm3(self.pointwise(out)))
+        out = self.relu2(self.norm2(self.depthwise(self.pad(out))))
+        return self.norm3(self.pointwise(out))
 
 
 class ShuffleLayer(torch.nn.Module):
@@ -298,7 +308,8 @@ class ShuffleLayer(torch.nn.Module):
     def __init__(self,channels,mids,kernel_size=3, 
                  leak=0.05,norm_type='batch',groups=1):
         super().__init__()
-        self.main_branch = Layer131(channels // 2,kernel_size,leak=leak,
+        self.main_branch = Layer131(channels,channels,channels // 2,
+                                    kernel_size,leak=leak,
                                     norm_type=norm_type,groups=groups)
 
     def forward(self, old_x):
@@ -319,7 +330,11 @@ class ResShuffleLayer(torch.nn.Module):
         self.conv1 = Conv(channels,channels,kernel_size,DWS=DWS,groups=groups,
                           dilation=dilation,norm_type=norm_type)
         self.norm1 = norm_layer(channels, affine=True)
-        self.relu = torch.nn.LeakyReLU(leak)
+        self.leak = leak
+        if leak == 0:
+            self.relu = torch.nn.ReLU(inplace=True)
+        else:
+            self.relu = torch.nn.LeakyReLU(leak)
         self.conv2 = Conv(channels,channels,kernel_size,DWS=DWS,groups=groups,
                           norm_type=norm_type)
         self.norm2 = norm_layer(channels, affine=True)
@@ -333,19 +348,21 @@ class ResShuffleLayer(torch.nn.Module):
         return shuffle_v1(self.relu(out + res),self.groups)
 
 
-class ResBottle(torch.nn.Module):
+class InvertedResidual(torch.nn.Module):
     """ MobileNetv2 style residual linear bottleneck layer
         to import into ImageTransformer
     """
-    def __init__(self,channels,leak=0.05,norm_type='batch',
-                 DWS=True,groups=1):
+    def __init__(self,ins,outs,expansion,stride=1,leak=0,dilation=1):
         super().__init__()
-        self.layer1 = ResLayer(channels,leak=leak,norm_type=norm_type,
-                               DWS=DWS,groups=groups)
-
-    def forward(self, ins):
-        """ forward pass """
-        res = ins
-        # upsample, then apply conv
-        out = self.layer1(ins)
-        return self.relu(out + res)
+        self.stride = stride
+        assert stride in [1, 2]
+        self.is_res = stride == 1 and ins == outs
+        self.conv = Layer131(ins,outs,ins*expansion,kernel_size=3,
+                             stride=stride,leak=leak,dilation=dilation)
+        
+    def forward(self, x):
+        if self.is_res:
+            return x + self.conv(x)
+        else:
+            return self.conv(x)
+        
