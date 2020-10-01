@@ -11,6 +11,7 @@ import torch
 from layers import Conv, Conv1stLayer, UpConv, UpConvUS, ResLayer, ResShuffleLayer
 from layers import DWSConv, DWSConvT
 from torch.quantization import fuse_modules
+from torch.nn.quantization import QuantStub, DeQuantStub
 
 class ImageTransformer(torch.nn.Module):
     """ This is our main model, for fast NST, currently uses:
@@ -35,15 +36,11 @@ class ImageTransformer(torch.nn.Module):
         super().__init__()
         self.fused = False
         self.leak = leak
-        if leak == 0:
-            self.relu = torch.nn.ReLU(inplace=True)
-        else:
-            self.relu = torch.nn.LeakyReLU(leak)
         self.norm_type = norm_type
-        if norm_type == 'batch':
-            norm_layer = torch.nn.BatchNorm2d
-        else:
-            norm_layer = torch.nn.InstanceNorm2d
+        
+        self.quant = QuantStub()
+        
+        # downward conv block (shrink to 1/4x1/4 image)
         self.down_conv = torch.nn.Sequential(
             Conv1stLayer(3, filters[0], outerK, 1, DWS=DWSFL, 
                          norm_type=norm_type, leak=leak),
@@ -52,6 +49,8 @@ class ImageTransformer(torch.nn.Module):
             Conv(filters[1], filters[2], 3, 2, DWS=DWS,groups=endgroups[1],
                  norm_type=norm_type, leak=leak)
         )
+        
+        # resblock - most effort is here
         if shuffle:
             self.res_block = torch.nn.Sequential()
             i=0
@@ -90,9 +89,14 @@ class ImageTransformer(torch.nn.Module):
                        norm_type=norm_type, leak=leak),
                 Conv(filters[0], 3, outerK, 1, DWS=DWSFL, bias=bias_ll)
             )
-        self.transformer = torch.nn.Sequential(self.down_conv,
+        
+        self.dequant = DeQuantStub()    
+        
+        self.transformer = torch.nn.Sequential(self.quant,
+                                               self.down_conv,
                                                self.res_block,
-                                               self.up_conv)
+                                               self.up_conv,
+                                               self.dequant)
 
 
     def fuse(self):
