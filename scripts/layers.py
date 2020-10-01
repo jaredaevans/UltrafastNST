@@ -8,7 +8,6 @@
 
 import torch
 from torch.nn.quantized import FloatFunctional as FF
-from torch.quantization import fuse_modules
 
 class ReflectPad2d(torch.nn.Module):
     """ reflectionpad2d that can be transfered across onnx etc
@@ -72,13 +71,13 @@ class DWSConv(torch.nn.Module):
             norm_layer = torch.nn.BatchNorm2d
         else:
             norm_layer = torch.nn.InstanceNorm2d
-        self.norm1 = norm_layer(ins, affine=True)
-        self.norm2 = norm_layer(outs, affine=True)
         self.depthwise = torch.nn.Conv2d(ins, ins, kernel_size, stride=stride, 
                                          groups=ins, dilation=dilation, 
                                          bias=False)
+        self.norm1 = norm_layer(ins, affine=True)
         self.pointwise = torch.nn.Conv2d(ins, outs, 1, groups=groups, 
                                          bias=bias)
+        self.norm2 = norm_layer(outs, affine=True)
         self.leak = leak
         if leak == 0:
             self.relu = torch.nn.ReLU(inplace=True)
@@ -106,13 +105,13 @@ class DWSConvT(torch.nn.Module):
             norm_layer = torch.nn.BatchNorm2d
         else:
             norm_layer = torch.nn.InstanceNorm2d
-        self.norm1 = norm_layer(ins, affine=True)
-        self.norm2 = norm_layer(outs, affine=True)
         self.depthwise = torch.nn.ConvTranspose2d(ins, ins, kernel_size,
                                                   stride=stride,
                                                   padding=padding,
                                                   groups=ins, bias=False)
+        self.norm1 = norm_layer(ins, affine=True)
         self.pointwise = torch.nn.Conv2d(ins, outs, 1, groups=groups, bias=False)
+        self.norm2 = norm_layer(outs, affine=True)
         self.leak = leak
         if leak == 0:
             self.relu = torch.nn.ReLU(inplace=True)
@@ -154,7 +153,7 @@ class Conv(torch.nn.Module):
 class Conv1stLayer(torch.nn.Module):
     """ Conv layer with reflection or zero padding """
     def __init__(self,ins,outs,kernel_size=3,stride=1,padding='ref',
-                 DWS=False,groups=1,dilation=1,norm_type='batch'):
+                 DWS=False,groups=1,dilation=1,norm_type='batch',leak=0):
         assert kernel_size % 2 == 1
         super().__init__()
         padding_size = (kernel_size // 2)*dilation
@@ -167,6 +166,16 @@ class Conv1stLayer(torch.nn.Module):
                                       dilation=dilation,bias=False)
         if DWS:
             self.conv2d = torch.nn.Conv2d(ins,outs,1,groups=1,bias=False)
+        if norm_type == 'batch':
+            norm_layer = torch.nn.BatchNorm2d
+        else:
+            norm_layer = torch.nn.InstanceNorm2d
+        self.norm = norm_layer(outs, affine=True)
+        self.leak = leak
+        if leak == 0:
+            self.relu = torch.nn.ReLU(inplace=True)
+        else:
+            self.relu = torch.nn.LeakyReLU(leak)
 
     def forward(self, ins):
         """ forward pass """
@@ -174,7 +183,7 @@ class Conv1stLayer(torch.nn.Module):
             out = ins
         else:
             out = self.pad(ins)
-        out = self.conv2d(out)
+        out = self.relu(self.norm(self.conv2d(out)))
         return out
 
 

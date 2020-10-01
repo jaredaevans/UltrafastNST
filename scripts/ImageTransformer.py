@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """ This is the primary fast image transformer definition trained to quickly
-transfer a style onto a photo
+    transfer a style onto a photo
+    Note: to make quantization work, need to add
+        1) QuantStub, DeQuantStub
+        2) res connections (add) -> nn.quantized.FloatFunctional 
 """
 
 import torch
 from layers import Conv, Conv1stLayer, UpConv, UpConvUS, ResLayer, ResShuffleLayer
+from layers import DWSConv, DWSConvT
+from torch.quantization import fuse_modules
 
 class ImageTransformer(torch.nn.Module):
     """ This is our main model, for fast NST, currently uses:
@@ -28,25 +33,24 @@ class ImageTransformer(torch.nn.Module):
                  upkern=3,
                  bias_ll=True):
         super().__init__()
+        self.fused = False
         self.leak = leak
         if leak == 0:
             self.relu = torch.nn.ReLU(inplace=True)
         else:
             self.relu = torch.nn.LeakyReLU(leak)
+        self.norm_type = norm_type
         if norm_type == 'batch':
             norm_layer = torch.nn.BatchNorm2d
         else:
             norm_layer = torch.nn.InstanceNorm2d
         self.down_conv = torch.nn.Sequential(
-            Conv1stLayer(3, filters[0], outerK, 1, DWS=DWSFL),
-            norm_layer(filters[0], affine=True),
-            self.relu,
-            Conv(filters[0],filters[1], 3, 2, DWS=DWS,groups=endgroups[0]),
-            norm_layer(filters[1], affine=True),
-            self.relu,
-            Conv(filters[1], filters[2], 3, 2, DWS=DWS,groups=endgroups[1]),
-            norm_layer(filters[2], affine=True),
-            self.relu,
+            Conv1stLayer(3, filters[0], outerK, 1, DWS=DWSFL, 
+                         norm_type=norm_type, leak=leak),
+            Conv(filters[0],filters[1], 3, 2, DWS=DWS,groups=endgroups[0],
+                 norm_type=norm_type, leak=leak),
+            Conv(filters[1], filters[2], 3, 2, DWS=DWS,groups=endgroups[1],
+                 norm_type=norm_type, leak=leak)
         )
         if shuffle:
             self.res_block = torch.nn.Sequential()
@@ -72,27 +76,43 @@ class ImageTransformer(torch.nn.Module):
                 
         if upkern == 4:
             self.up_conv = torch.nn.Sequential(
-                UpConv(filters[2], filters[1], 4, 2, DWS=DWS,groups=endgroups[1]),
-                norm_layer(filters[1], affine=True),
-                self.relu,
-                UpConv(filters[1], filters[0], 4, 2, DWS=DWS,groups=endgroups[0]),
-                norm_layer(filters[0], affine=True),
-                self.relu,
+                UpConv(filters[2], filters[1], 4, 2, DWS=DWS,groups=endgroups[1],
+                       norm_type=norm_type, leak=leak),
+                UpConv(filters[1], filters[0], 4, 2, DWS=DWS,groups=endgroups[0],
+                       norm_type=norm_type, leak=leak),
                 Conv(filters[0], 3, outerK, 1, DWS=DWSFL, bias=bias_ll)
             )
         if upkern == 3:
             self.up_conv = torch.nn.Sequential(
-                UpConvUS(filters[2], filters[1], 3, 2, DWS=DWS,groups=endgroups[1]),
-                norm_layer(filters[1], affine=True),
-                self.relu,
-                UpConvUS(filters[1], filters[0], 3, 2, DWS=DWS,groups=endgroups[0]),
-                norm_layer(filters[0], affine=True),
-                self.relu,
+                UpConvUS(filters[2], filters[1], 3, 2, DWS=DWS,groups=endgroups[1],
+                       norm_type=norm_type, leak=leak),
+                UpConvUS(filters[1], filters[0], 3, 2, DWS=DWS,groups=endgroups[0],
+                       norm_type=norm_type, leak=leak),
                 Conv(filters[0], 3, outerK, 1, DWS=DWSFL, bias=bias_ll)
             )
         self.transformer = torch.nn.Sequential(self.down_conv,
                                                self.res_block,
                                                self.up_conv)
+
+
+    def fuse(self):
+        if self.norm_type != 'batch' or self.fused == True:
+            print("Cannot fuse")
+            return
+        for m in self.modules():
+            if type(m) == DWSConv or type(m) == DWSConvT:
+                fuse_modules(m, ['depthwise','norm1'],inplace=True)
+                if m.leak==0:
+                    fuse_modules(m, ['pointwise','norm2','relu'],inplace=True) 
+                else:
+                    fuse_modules(m, ['pointwise','norm2'],inplace=True) 
+            if type(m) == Conv1stLayer:
+                if m.leak==0:
+                    fuse_modules(m, ['conv2d','norm','relu'],inplace=True)
+                else:
+                    fuse_modules(m, ['conv2d','norm'],inplace=True)
+        print("Fusion complete")
+        self.fuse = True
 
     def forward(self, ins):
         """ forward pass """
