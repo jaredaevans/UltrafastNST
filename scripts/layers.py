@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-    Layers used in the image transformer
+    Layers used in the image transformer and portrait segmenter
+    Note: to make quantization work, need to add
+        1) res connections (add) -> nn.quantized.FloatFunctional 
 """
 
 import torch
+from torch.nn.quantized import FloatFunctional as FF
 
 class ReflectPad2d(torch.nn.Module):
     """ reflectionpad2d that can be transfered across onnx etc
@@ -254,13 +257,14 @@ class ResLayer(torch.nn.Module):
         self.conv2 = Conv(channels,channels,kernel_size,DWS=DWS,
                           norm_type=norm_type)
         self.norm2 = norm_layer(channels, affine=True)
+        self.skip_add = FF()
 
     def forward(self, ins):
         """ forward pass """
         res = ins
         out = self.relu(self.norm1(self.conv1(ins)))
         out = self.norm2(self.conv2(out))
-        return self.relu(out + res)
+        return self.relu(self.skip_add(out,res))
 
 
 class Layer131(torch.nn.Module):
@@ -294,7 +298,6 @@ class Layer131(torch.nn.Module):
         self.norm1 = norm_layer(mids, affine=True)
         self.norm2 = norm_layer(mids, affine=True)
         self.norm3 = norm_layer(outs, affine=True)
-
 
     def forward(self, ins):
         """ forward pass """
@@ -339,13 +342,14 @@ class ResShuffleLayer(torch.nn.Module):
                           norm_type=norm_type)
         self.norm2 = norm_layer(channels, affine=True)
         self.groups = groups
+        self.skip_add = FF()
 
     def forward(self, ins):
         """ forward pass """
         res = ins
         out = self.relu(self.norm1(self.conv1(ins)))
         out = self.norm2(self.conv2(out))
-        return shuffle_v1(self.relu(out + res),self.groups)
+        return shuffle_v1(self.relu(self.skip_add(out,res)),self.groups)
 
 
 class InvertedResidual(torch.nn.Module):
@@ -359,9 +363,10 @@ class InvertedResidual(torch.nn.Module):
         self.is_res = stride == 1 and ins == outs
         self.conv = Layer131(ins,outs,ins*expansion,kernel_size=3,
                              stride=stride,leak=leak,dilation=dilation)
+        self.skip_add = FF()
         
     def forward(self, x):
         if self.is_res:
-            return x + self.conv(x)
+            return self.skip_add(x,self.conv(x))
         else:
             return self.conv(x)

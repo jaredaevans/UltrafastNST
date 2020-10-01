@@ -17,15 +17,15 @@ class ImageTransformer(torch.nn.Module):
         Note: IN may be source of water droplet features:
             https://arxiv.org/pdf/1912.04958.pdf)
     """
-    def __init__(self,leak=0.05,
+    def __init__(self,leak=0,
                  norm_type='batch',
                  DWS=True,DWSFL=False,
                  outerK=3,resgroups=4,
                  filters=[8,12,16],
                  shuffle=True,
-                 blocks=[1,2,1,2,1,2,1,1],
+                 blocks=[2,2,2,1,1,1],
                  endgroups=(1,1),
-                 upkern=4,
+                 upkern=3,
                  bias_ll=True):
         super().__init__()
         self.leak = leak

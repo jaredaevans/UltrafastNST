@@ -104,7 +104,7 @@ def stylize_video(): #save_vid=False:
     num_benches = len(bench_list)
     bench_id = 0
     
-    models_list = ["Db", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "U"]
+    models_list = ["S"]
     num_models = len(models_list)
     model_id = 0
     
