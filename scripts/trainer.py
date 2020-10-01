@@ -130,9 +130,9 @@ class Trainer():
                                      shifts=(-dx, -dy),dims=(2, 3))
         stability_score = self.stabilitylayer(sty_image_shift[:,:,5:-5,5:-5],
                                               stylized_image[:,:,5:-5,5:-5]) 
+        # luminous loss
         
-        
-        style_score *= self.style_weight
+        #style_score *= self.style_weight
         content_score *= self.content_weight
         cs_score *= self.cs_weight
         var_score *= self.tv_weight
@@ -185,6 +185,9 @@ class Trainer():
         self.tv_weight = tv_weight
         self.cs_weight = cs_weight
         self.stability_weight = stable_weight
+        
+        for style_layer in self.style_losses:
+            style_layer.new_weights(style_weight)
         
         # set the learning rate
         for param_group in self.optimizer.param_groups:

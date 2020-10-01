@@ -13,7 +13,7 @@ from torch.nn import BatchNorm2d as BN
 from layers import Conv, UpConv, UpConvUS, InvertedResidual
 
 
-class PortraitSegmenter(torch.nn.module):
+class PortraitSegmenter(torch.nn.Module):
     """ This is out UNet style segmenter.  We work on a small image, and 
         scale up the result.
     """
@@ -53,7 +53,7 @@ class PortraitSegmenter(torch.nn.module):
             self.deconv3 = UpConvUS(filters[3],filters[2],upsample=2,DWS=True)
             self.deconv2 = UpConvUS(filters[2],filters[1],upsample=2,DWS=True)
             self.deconv1 = UpConvUS(filters[1],filters[0],upsample=2,DWS=True)
-            self.deconv0 = UpConvUS(filters[0],endchannels,upsample=2,DWS=True)
+            self.deconv0 = UpConvUS(filters[0],endchannels[0],upsample=2,DWS=True)
         else:
             self.deconv3 = UpConv(filters[3],filters[2],upsample=2,DWS=True)
             self.deconv2 = UpConv(filters[2],filters[1],upsample=2,DWS=True)
@@ -71,10 +71,12 @@ class PortraitSegmenter(torch.nn.module):
         x3 = self.level3(x2)
         
         up2 = self.deconv3(x3)
-        up1 = self.deconv3(x2+up2)
-        up0 = self.deconv3(x1+up1)
+        print(up2.shape)
+        print(x2.shape)
+        up1 = self.deconv2(x2+up2)
+        up0 = self.deconv1(x1+up1)
         
-        penult = self.deconv3(x0+up0)
+        penult = self.deconv0(x0+up0)
         
         return self.pred(penult), self.edge(penult)
         

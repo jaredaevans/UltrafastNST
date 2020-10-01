@@ -268,7 +268,7 @@ class Layer131(torch.nn.Module):
         key component of shufflenetv2 and mobilenet v2
     """
     def __init__(self,ins,outs,mids,kernel_size=3,leak=0.05,norm_type='batch',
-                 groups=1,dilation=1):
+                 groups=1,dilation=1,stride=1):
         super().__init__()
         if norm_type == 'batch':
             norm_layer = torch.nn.BatchNorm2d
@@ -279,7 +279,7 @@ class Layer131(torch.nn.Module):
         self.pad = ReflectPad2d(padding_size)
         self.firstlayer = torch.nn.Conv2d(ins, mids, 1, 
                                           groups=groups, bias=False)
-        self.depthwise = torch.nn.Conv2d(mids, mids, kernel_size, 
+        self.depthwise = torch.nn.Conv2d(mids,mids,kernel_size,stride=stride, 
                                          groups=mids, bias=False,
                                          dilation=dilation)
         self.pointwise = torch.nn.Conv2d(mids, outs, 1, 
@@ -365,4 +365,3 @@ class InvertedResidual(torch.nn.Module):
             return x + self.conv(x)
         else:
             return self.conv(x)
-        

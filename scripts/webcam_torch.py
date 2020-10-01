@@ -54,6 +54,8 @@ def build_model(idkey):
         return ImageTransformer(leak=0,upkern=3,blocks=[2,2,2,1,1,1])
     elif idkey=='T':
         return ImageTransformer(leak=0,upkern=3,blocks=[2,2,2,2,1,1,1,1])
+    elif idkey=='U':
+        return ImageTransformer(leak=0,upkern=3,blocks=[2,2,2,1,1,1])
     else:
         return ImageTransformer()
     
@@ -87,13 +89,22 @@ def stylize_video(): #save_vid=False:
     
     isHalf = False
 
-    bench_list = ["../../benches/bird_bench_", 
-                   "../../benches/comp7_bench_", 
-                   "../../benches/scream_bench_"]
+    bench_list = [
+        "../../benches/bird_bench_", "../../benches/comp7_bench_",
+        "../../benches/scream_bench_", "../../benches/dazzleships_",
+        "../../benches/monet_blue_", "../../benches/gorky_artichoke_",
+         "../../benches/gorky_artichoke_prune_",
+        "../../benches/bruegel_babel_", "../../benches/delauney_rythme_",
+        "../../benches/bosch_tondal_",
+        "../../benches/delaunay_window_", 
+        "../../benches/vanDoesburg_CompositionI_", 
+        "../../benches/comp7_",
+        "../../benches/gorky_liver_"
+    ]
     num_benches = len(bench_list)
     bench_id = 0
     
-    models_list = ["Db", "K", "L", "M", "N", "O", "P", "Q", "R", "S"]
+    models_list = ["Db", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "U"]
     num_models = len(models_list)
     model_id = 0
     
