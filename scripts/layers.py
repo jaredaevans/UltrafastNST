@@ -8,6 +8,7 @@
 
 import torch
 from torch.nn.quantized import FloatFunctional as FF
+from torch.quantization import fuse_modules
 
 class ReflectPad2d(torch.nn.Module):
     """ reflectionpad2d that can be transfered across onnx etc
@@ -65,22 +66,29 @@ class DWSConv(torch.nn.Module):
         optional grouping on the pointwise conv
     """
     def __init__(self,ins,outs,kernel_size=3,stride=1,groups=1,dilation=1,
-                 norm_type='batch',bias=False):
+                 norm_type='batch',bias=False,leak=0):
         super().__init__()
         if norm_type == 'batch':
             norm_layer = torch.nn.BatchNorm2d
         else:
             norm_layer = torch.nn.InstanceNorm2d
-        self.norm = norm_layer(ins, affine=True)
+        self.norm1 = norm_layer(ins, affine=True)
+        self.norm2 = norm_layer(outs, affine=True)
         self.depthwise = torch.nn.Conv2d(ins, ins, kernel_size, stride=stride, 
                                          groups=ins, dilation=dilation, 
                                          bias=False)
         self.pointwise = torch.nn.Conv2d(ins, outs, 1, groups=groups, 
                                          bias=bias)
+        self.leak = leak
+        if leak == 0:
+            self.relu = torch.nn.ReLU(inplace=True)
+        else:
+            self.relu = torch.nn.LeakyReLU(leak)
 
     def forward(self, ins):
         """ forward pass """
-        return self.pointwise(self.norm(self.depthwise(ins)))
+        x = self.norm1(self.depthwise(ins))
+        return self.relu(self.norm2(self.pointwise(x)))
 
 
 class DWSConvT(torch.nn.Module):
@@ -92,39 +100,36 @@ class DWSConvT(torch.nn.Module):
         padding and conversion
     """
     def __init__(self,ins,outs,kernel_size=4,stride=2,padding=1,
-                 groups=1,norm_type='batch'):
+                 groups=1,norm_type='batch',bias=False,leak=0):
         super().__init__()
         if norm_type == 'batch':
             norm_layer = torch.nn.BatchNorm2d
         else:
             norm_layer = torch.nn.InstanceNorm2d
-        self.norm = norm_layer(ins, affine=True)
+        self.norm1 = norm_layer(ins, affine=True)
+        self.norm2 = norm_layer(outs, affine=True)
         self.depthwise = torch.nn.ConvTranspose2d(ins, ins, kernel_size,
                                                   stride=stride,
                                                   padding=padding,
                                                   groups=ins, bias=False)
         self.pointwise = torch.nn.Conv2d(ins, outs, 1, groups=groups, bias=False)
+        self.leak = leak
+        if leak == 0:
+            self.relu = torch.nn.ReLU(inplace=True)
+        else:
+            self.relu = torch.nn.LeakyReLU(leak)
 
     def forward(self, ins):
         """ forward pass """
-        return self.pointwise(self.norm(self.depthwise(ins)))
-
-
-class Swish(torch.nn.Module):
-    """ Swish activation function """
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, ins):
-        """ forward pass """
-        return ins * torch.sigmoid(ins)
+        x = self.norm1(self.depthwise(ins))
+        return self.relu(self.norm2(self.pointwise(x)))
 
 
 class Conv(torch.nn.Module):
     """ Conv layer with reflection or zero padding """
     def __init__(self,ins,outs,kernel_size=3,stride=1,padding='ref',
                  DWS=False,groups=1,dilation=1,norm_type='batch',
-                 bias=False):
+                 leak=0,bias=False):
         assert kernel_size % 2 == 1
         super().__init__()
         padding_size = (kernel_size // 2)*dilation
@@ -137,7 +142,7 @@ class Conv(torch.nn.Module):
         if DWS:
             self.conv2d = DWSConv(ins, outs, kernel_size, stride, 
                                   groups=groups,dilation=dilation,
-                                  norm_type=norm_type,bias=bias)
+                                  norm_type=norm_type,bias=bias,leak=leak)
 
     def forward(self, ins):
         """ forward pass """
@@ -179,7 +184,7 @@ class UpConv(torch.nn.Module):
         worse for checkerboard artifacts - revisit with coreml version update
     """
     def __init__(self, ins, outs, kernel_size=4, upsample=2, padding='ref',
-                 DWS=False, groups=1,norm_type='batch'):
+                 DWS=False, groups=1,norm_type='batch', leak=0):
         super().__init__()
         self.conv2d = torch.nn.ConvTranspose2d(ins, outs, kernel_size, 
                                                stride=upsample, padding=1, 
@@ -187,7 +192,7 @@ class UpConv(torch.nn.Module):
         if DWS:
             self.conv2d = DWSConvT(ins, outs, kernel_size, stride=upsample,
                                    padding=1, groups=groups,
-                                   norm_type=norm_type)
+                                   norm_type=norm_type,leak=leak)
 
     def forward(self, ins):
         """ forward pass """
@@ -197,7 +202,7 @@ class UpConv(torch.nn.Module):
 class UpConvUS(torch.nn.Module):
     """ Up sample conv layer with padding using upsampling """
     def __init__(self, ins, outs, kernel_size=3, upsample=2, padding='ref',
-                 DWS=False, groups=1,norm_type='batch'):
+                 DWS=False, groups=1,norm_type='batch', leak=0):
         assert kernel_size % 2 == 1
         super().__init__()
         padding_size = kernel_size // 2
@@ -209,7 +214,7 @@ class UpConvUS(torch.nn.Module):
         if DWS:
             self.conv2d = DWSConv(ins, outs, kernel_size,
                                   groups=groups,
-                                  norm_type=norm_type)
+                                  norm_type=norm_type,leak=leak)
         self.upsample = upsample
 
     def forward(self, x):
@@ -370,3 +375,13 @@ class InvertedResidual(torch.nn.Module):
             return self.skip_add(x,self.conv(x))
         else:
             return self.conv(x)
+
+
+class Swish(torch.nn.Module):
+    """ Swish activation function """
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, ins):
+        """ forward pass """
+        return ins * torch.sigmoid(ins)
