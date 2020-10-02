@@ -77,9 +77,9 @@ def stylize_video(): #save_vid=False:
     "gorky_liver_" '''
 
     bench_list = [
-        "scream_bench_", "bird_bench_", "comp7_bench_",
-         "Jazzcups_","dazzleships_", "comp7_", "monet_blue_", 
-         "gorky_artichoke_", "delauney_rythme_"
+        "scream_bench_", "bird_bench_", "comp7_bench_", "jazzcups_",
+        "dazzleships_", "comp7_", "monet_blue_", "gorky_artichoke_", 
+        "delauney_rythme_","taeuber-arp_composition_"
     ]
     num_benches = len(bench_list)
     bench_id = 0
