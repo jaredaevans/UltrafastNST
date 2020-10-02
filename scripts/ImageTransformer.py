@@ -10,8 +10,8 @@
 import torch
 from layers import Conv, Conv1stLayer, UpConv, UpConvUS, ResLayer, ResShuffleLayer
 from layers import DWSConv, DWSConvT
-from torch.quantization import fuse_modules
-from torch.nn.quantization import QuantStub, DeQuantStub
+from torch.quantization import fuse_modules, QuantStub, DeQuantStub
+
 
 class ImageTransformer(torch.nn.Module):
     """ This is our main model, for fast NST, currently uses:
@@ -73,6 +73,7 @@ class ImageTransformer(torch.nn.Module):
                                                           groups=resgroups))
                 i += 1
                 
+        # up conv block (grow to original size)
         if upkern == 4:
             self.up_conv = torch.nn.Sequential(
                 UpConv(filters[2], filters[1], 4, 2, DWS=DWS,groups=endgroups[1],

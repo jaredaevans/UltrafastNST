@@ -215,8 +215,8 @@ class UpConvUS(torch.nn.Module):
         assert kernel_size % 2 == 1
         super().__init__()
         padding_size = kernel_size // 2
-        self.pad = torch.nn.ReflectionPad2d(padding_size)
-        #self.pad = ReflectPad2d_rev(padding_size)
+        #self.pad = torch.nn.ReflectionPad2d(padding_size)
+        self.pad = ReflectPad2d(padding_size)
         if padding == 'zero':
             self.pad = torch.nn.ZeroPad2d()(padding_size)
         self.conv2d = torch.nn.Conv2d(ins,outs,kernel_size,stride=1,bias=False)
@@ -278,7 +278,7 @@ class ResLayer(torch.nn.Module):
         res = ins
         out = self.relu(self.norm1(self.conv1(ins)))
         out = self.norm2(self.conv2(out))
-        return self.relu(self.skip_add(out,res))
+        return self.relu(self.skip_add.add(out,res))
 
 
 class Layer131(torch.nn.Module):
@@ -363,7 +363,7 @@ class ResShuffleLayer(torch.nn.Module):
         res = ins
         out = self.relu(self.norm1(self.conv1(ins)))
         out = self.norm2(self.conv2(out))
-        return shuffle_v1(self.relu(self.skip_add(out,res)),self.groups)
+        return shuffle_v1(self.relu(self.skip_add.add(out,res)),self.groups)
 
 
 class InvertedResidual(torch.nn.Module):
@@ -381,7 +381,7 @@ class InvertedResidual(torch.nn.Module):
         
     def forward(self, x):
         if self.is_res:
-            return self.skip_add(x,self.conv(x))
+            return self.skip_add.add(x,self.conv(x))
         else:
             return self.conv(x)
 
