@@ -10,7 +10,7 @@
 import torch
 from layers import Conv, Conv1stLayer, UpConv, UpConvUS, ResLayer, ResShuffleLayer
 from layers import DWSConv, DWSConvT
-from torch.quantization import fuse_modules, QuantStub, DeQuantStub
+from torch.quantization import fuse_modules
 
 
 class ImageTransformer(torch.nn.Module):
@@ -37,8 +37,6 @@ class ImageTransformer(torch.nn.Module):
         self.fused = False
         self.leak = leak
         self.norm_type = norm_type
-        
-        self.quant = QuantStub()
         
         # downward conv block (shrink to 1/4x1/4 image)
         self.down_conv = torch.nn.Sequential(
@@ -89,35 +87,31 @@ class ImageTransformer(torch.nn.Module):
                 UpConvUS(filters[1], filters[0], 3, 2, DWS=DWS,groups=endgroups[0],
                        norm_type=norm_type, leak=leak),
                 Conv(filters[0], 3, outerK, 1, DWS=DWSFL, bias=bias_ll)
-            )
+            )  
         
-        self.dequant = DeQuantStub()    
-        
-        self.transformer = torch.nn.Sequential(self.quant,
-                                               self.down_conv,
+        self.transformer = torch.nn.Sequential(self.down_conv,
                                                self.res_block,
-                                               self.up_conv,
-                                               self.dequant)
+                                               self.up_conv)
 
 
-    def fuse(self):
-        if self.norm_type != 'batch' or self.fused == True:
+    def fuse(self, inplace=True):
+        if self.norm_type != 'batch' or self.fused:
             print("Cannot fuse")
             return
         for m in self.modules():
             if type(m) == DWSConv or type(m) == DWSConvT:
-                fuse_modules(m, ['depthwise','norm1'],inplace=True)
+                fuse_modules(m, ['depthwise','norm1'],inplace=inplace)
                 if m.leak==0:
-                    fuse_modules(m, ['pointwise','norm2','relu'],inplace=True) 
+                    fuse_modules(m, ['pointwise','norm2','relu'],inplace=inplace) 
                 else:
-                    fuse_modules(m, ['pointwise','norm2'],inplace=True) 
+                    fuse_modules(m, ['pointwise','norm2'],inplace=inplace) 
             if type(m) == Conv1stLayer:
                 if m.leak==0:
-                    fuse_modules(m, ['conv2d','norm','relu'],inplace=True)
+                    fuse_modules(m, ['conv2d','norm','relu'],inplace=inplace)
                 else:
-                    fuse_modules(m, ['conv2d','norm'],inplace=True)
+                    fuse_modules(m, ['conv2d','norm'],inplace=inplace)
         print("Fusion complete")
-        self.fuse = True
+        self.fused = True
 
     def forward(self, ins):
         """ forward pass """
