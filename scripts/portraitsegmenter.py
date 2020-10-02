@@ -62,7 +62,28 @@ class PortraitSegmenter(torch.nn.Module):
             
         self.pred = Conv(endchannels[0],endchannels[1],DWS=False,bias=bias_ll)
         self.edge = Conv(endchannels[0],endchannels[1],DWS=False,bias=bias_ll)
-        
+    
+    """
+    def fuse(self, inplace=True):
+        if self.norm_type != 'batch' or self.fused:
+            print("Cannot fuse")
+            return
+        for m in self.modules():
+            if type(m) == DWSConv or type(m) == DWSConvT:
+                fuse_modules(m, ['depthwise','norm1'],inplace=inplace)
+                if m.leak==0:
+                    fuse_modules(m, ['pointwise','norm2','relu'],inplace=inplace) 
+                else:
+                    fuse_modules(m, ['pointwise','norm2'],inplace=inplace) 
+            if type(m) == Conv1stLayer:
+                if m.leak==0:
+                    fuse_modules(m, ['conv2d','norm','relu'],inplace=inplace)
+                else:
+                    fuse_modules(m, ['conv2d','norm'],inplace=inplace)
+        print("Fusion complete")
+        self.fused = True
+        """
+    
     def forward(self, ins):
         """ forward pass """
         x0 = self.level0(ins)

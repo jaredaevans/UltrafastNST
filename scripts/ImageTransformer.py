@@ -27,7 +27,7 @@ class ImageTransformer(torch.nn.Module):
                  norm_type='batch',
                  DWS=True,DWSFL=False,
                  outerK=3,resgroups=4,
-                 filters=[8,12,16],
+                 filters=[8,16,16],
                  shuffle=True,
                  blocks=[2,2,2,1,1,1],
                  endgroups=(1,1),

@@ -30,34 +30,11 @@ def build_model(idkey):
                     bias_ll=True)
 
     """
-    if idkey=='Db':
-        return ImageTransformer()
-    elif idkey=='Db_q':
-        return ImageTransformer()
-    elif idkey=='K':
-        return ImageTransformer(blocks=[2,2,2,2,1,1],endgroups=(2,2))
-    elif idkey=='L':
-        return ImageTransformer(blocks=[2,2,2,2,2,2,2,2],endgroups=(2,2))
-    elif idkey=='M':
-        return ImageTransformer(blocks=[3,3,2,2,1,1],endgroups=(2,2))
-    elif idkey=='N':
-        return ImageTransformer(blocks=[1,1,1,1,1,1],endgroups=(2,2))
-    elif idkey=='O':
-        return ImageTransformer(blocks=[2,2,2,2,2,2,1,1],endgroups=(1,2))
-    elif idkey=='P':
-        return ImageTransformer()
-    elif idkey=='Q':
-        return ImageTransformer(blocks=[2,2,2,2,2,1,1])
-    elif idkey=='R':
-        return ImageTransformer(blocks=[2,2,2,1,1,1])
-    elif idkey=='S':
-        return ImageTransformer(leak=0,upkern=3,blocks=[2,2,2,1,1,1])
-    elif idkey=='T':
-        return ImageTransformer(leak=0,upkern=3,blocks=[2,2,2,2,1,1,1,1])
-    elif idkey=='U':
-        return ImageTransformer(leak=0,upkern=3,blocks=[2,2,2,1,1,1])
-    else:
-        return ImageTransformer()
+    if idkey=='V':
+        model = ImageTransformer()
+    model.eval()
+    model.fuse()
+    return model
     
 def quantize_model(image_transformer):
     """ Convert model to quantized version """
@@ -88,23 +65,26 @@ def stylize_video(): #save_vid=False:
     color = (0, 0.5, 0.8) 
     
     isHalf = False
+    
+    dir_path = "../models/"
+
+
+    ''' "bruegel_babel_", 
+    "bosch_tondal_",
+    "delaunay_window_", 
+    "vanDoesburg_CompositionI_", 
+    
+    "gorky_liver_" '''
 
     bench_list = [
-        "../../benches/bird_bench_", "../../benches/comp7_bench_",
-        "../../benches/scream_bench_", "../../benches/dazzleships_",
-        "../../benches/monet_blue_", "../../benches/gorky_artichoke_",
-         "../../benches/gorky_artichoke_prune_",
-        "../../benches/bruegel_babel_", "../../benches/delauney_rythme_",
-        "../../benches/bosch_tondal_",
-        "../../benches/delaunay_window_", 
-        "../../benches/vanDoesburg_CompositionI_", 
-        "../../benches/comp7_",
-        "../../benches/gorky_liver_"
+        "scream_bench_", "bird_bench_", "comp7_bench_",
+         "Jazzcups_","dazzleships_", "comp7_", "monet_blue_", 
+         "gorky_artichoke_", "delauney_rythme_"
     ]
     num_benches = len(bench_list)
     bench_id = 0
     
-    models_list = ["S"]
+    models_list = ["V"]
     num_models = len(models_list)
     model_id = 0
     
@@ -113,7 +93,7 @@ def stylize_video(): #save_vid=False:
     # Load torch model
     bench_base = bench_list[bench_id]
     model_base = models_list[model_id]
-    stored_file = bench_base + model_base + model_tail
+    stored_file = dir_path + bench_base + model_base + model_tail
     print("Loading: " + stored_file)
     
     model = build_model(model_base)
@@ -179,7 +159,7 @@ def stylize_video(): #save_vid=False:
             if model_id >= num_models:
                 model_id = 0
             model_base = models_list[model_id]
-            stored_file = bench_base + model_base + model_tail
+            stored_file = dir_path + bench_base + model_base + model_tail
             print("Loading: " + stored_file)
             model = build_model(model_base)
             if model_base[-1] == "q":
@@ -197,7 +177,7 @@ def stylize_video(): #save_vid=False:
             if model_id < 0:
                 model_id = num_models - 1
             model_base = models_list[model_id]
-            stored_file = bench_base + model_base + model_tail
+            stored_file = dir_path + bench_base + model_base + model_tail
             print("Loading: " + stored_file)
             model = build_model(model_base)
             if model_base[-1] == "q":
@@ -214,7 +194,7 @@ def stylize_video(): #save_vid=False:
             if bench_id >= num_benches:
                 bench_id = 0
             bench_base = bench_list[bench_id]
-            stored_file = bench_base + model_base + model_tail
+            stored_file = dir_path + bench_base + model_base + model_tail
             print("Loading: " + stored_file)
             model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
             model.eval()
@@ -223,7 +203,7 @@ def stylize_video(): #save_vid=False:
             if bench_id < 0:
                 bench_id = num_benches - 1
             bench_base = bench_list[bench_id]
-            stored_file = bench_base + model_base + model_tail
+            stored_file = dir_path + bench_base + model_base + model_tail
             print("Loading: " + stored_file)
             model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
             model.eval() 
