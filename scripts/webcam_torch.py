@@ -16,15 +16,15 @@ from ImageTransformer import ImageTransformer
 def build_model(idkey):
     """
     Default parameters:
-    ImageTransformer(leak=0.05,
+    ImageTransformer(leak=0,
                     norm_type='batch',
                     DWS=True,
                     DWSFL=False,
                     outerK=3,
                     resgroups=4,
-                    filters=[8,12,16],
+                    filters=[8,16,16],
                     shuffle=True,
-                    blocks=[1,2,1,2,1,2,1,1],
+                    blocks=[2,2,2,1,1,1],
                     endgroups=(1,1),
                     upkern=4,
                     bias_ll=True)
@@ -32,8 +32,39 @@ def build_model(idkey):
     """
     if idkey=='V':
         model = ImageTransformer()
-    model.eval()
-    model.fuse()
+        model.eval()
+        model.fuse()
+    elif idkey=='W':
+        model = ImageTransformer(leak=0,
+                            norm_type='batch',
+                            DWS=False,DWSFL=False,
+                            outerK=3,resgroups=1,
+                            filters=[8,16,16],
+                            shuffle=True,
+                            blocks=[2,2,2,1,1,1],
+                            endgroups=(1,1),
+                            upkern=3,
+                            bias_ll=True)
+        model.eval()
+        model.fuse()
+    elif idkey=='A':
+        model = ImageTransformer(norm_type='inst',
+                                DWS=False,
+                                outerK=9,
+                                resgroups=1,
+                                filters=[32,64,128],
+                                shuffle=False,
+                                blocks=[1,1,1,1,1])
+        model.eval()
+    elif idkey=='C':
+        model = ImageTransformer(norm_type='inst',
+                                DWS=False,
+                                outerK=3,
+                                resgroups=1,
+                                filters=[16,24,32],
+                                shuffle=False,
+                                blocks=[1,1,1,1])
+        model.eval()
     return model
     
 def quantize_model(image_transformer):
@@ -84,7 +115,7 @@ def stylize_video(): #save_vid=False:
     num_benches = len(bench_list)
     bench_id = 0
     
-    models_list = ["V"]
+    models_list = ['W',"V",'A','C']
     num_models = len(models_list)
     model_id = 0
     

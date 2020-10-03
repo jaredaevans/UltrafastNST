@@ -259,6 +259,48 @@ class Trainer():
         return history
 
 
+class SegmentTrainer():
+    """ Segmenter trainer """
+    def __init__(self,segmenter):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.segmenter = segmenter.to(device)
+        self.optimizer = torch.optim.Adam(self.transformer.parameters(),
+                                          lr=0.01,betas=(0.98,0.9999))
+        
+    def step(self,inputs,losses):
+        print('step')
+    
+    def train(self,data,epochs=50,lr=0.01,batch_size=4,num_workers=1,
+              epoch_show=20,best_path="best.pth",es_patience=5,
+              test_image=None,test_im_show=5):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.cpu = torch.device("cpu")
+        #set the learning rate
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = lr
+            
+        trainloader = torch.utils.data.DataLoader(data, batch_size=batch_size,
+                                          shuffle=True, num_workers=num_workers)
+        
+        k = 0
+        running_losses = [0,0,0,0,0]
+        for epoch in range(epochs):  # loop over the dataset multiple times
+            for i, image_dat in enumerate(trainloader, 0):
+                # get the inputs; data is a list of [inputs, content]
+                inputs, content = image_dat
+
+                # zero the parameter gradients
+                self.optimizer.zero_grad()
+        
+                # forward + backward + optimize
+                loss = self.step(inputs,running_losses)
+                loss.backward()
+                self.optimizer.step()
+                k += 1
+         
+    
+    
+
 class IdentityTrainer():
     """ AE trainer """
     def __init__(self, transformer):

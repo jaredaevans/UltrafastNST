@@ -9,7 +9,7 @@
 
 import torch
 from layers import Conv, Conv1stLayer, UpConv, UpConvUS, ResLayer, ResShuffleLayer
-from layers import DWSConv, DWSConvT
+from layers import DWSConv, DWSConvT, ConvBNReLU
 from torch.quantization import fuse_modules
 
 
@@ -105,7 +105,7 @@ class ImageTransformer(torch.nn.Module):
                     fuse_modules(m, ['pointwise','norm2','relu'],inplace=inplace) 
                 else:
                     fuse_modules(m, ['pointwise','norm2'],inplace=inplace) 
-            if type(m) == Conv1stLayer:
+            if type(m) == Conv1stLayer or type(m) == ConvBNReLU:
                 if m.leak==0:
                     fuse_modules(m, ['conv2d','norm','relu'],inplace=inplace)
                 else:

@@ -124,6 +124,31 @@ class DWSConvT(torch.nn.Module):
         return self.relu(self.norm2(self.pointwise(x)))
 
 
+class ConvBNReLU(torch.nn.Module):
+    """ Conv layer with reflection or zero padding """
+    def __init__(self,ins,outs,kernel_size=3,stride=1,groups=1,dilation=1,
+                  norm_type='batch',leak=0):
+        assert kernel_size % 2 == 1
+        super().__init__()
+        self.conv2d = torch.nn.Conv2d(ins, outs, kernel_size, stride, 
+                                      dilation=dilation,groups=groups,
+                                      bias=False)
+        if norm_type == 'batch':
+            norm_layer = torch.nn.BatchNorm2d
+        else:
+            norm_layer = torch.nn.InstanceNorm2d
+        self.norm = norm_layer(outs, affine=True)
+        self.leak = leak
+        if leak == 0:
+            self.relu = torch.nn.ReLU(inplace=True)
+        else:
+            self.relu = torch.nn.LeakyReLU(leak)
+
+    def forward(self, ins):
+        """ forward pass """
+        return self.relu(self.norm(self.conv2d(ins)))
+    
+
 class Conv(torch.nn.Module):
     """ Conv layer with reflection or zero padding """
     def __init__(self,ins,outs,kernel_size=3,stride=1,padding='ref',
@@ -136,12 +161,14 @@ class Conv(torch.nn.Module):
         self.pad = ReflectPad2d(padding_size)
         if padding == 'zero':
             self.pad = torch.nn.ZeroPad2d()(padding_size)
-        self.conv2d = torch.nn.Conv2d(ins, outs, kernel_size, stride, 
-                                      dilation=dilation,bias=bias)
         if DWS:
             self.conv2d = DWSConv(ins, outs, kernel_size, stride, 
                                   groups=groups,dilation=dilation,
                                   norm_type=norm_type,bias=bias,leak=leak)
+        else:
+            self.conv2d = ConvBNReLU(ins, outs, kernel_size, stride, 
+                                  groups=groups,dilation=dilation,
+                                  norm_type=norm_type,leak=leak)
 
     def forward(self, ins):
         """ forward pass """
@@ -219,11 +246,13 @@ class UpConvUS(torch.nn.Module):
         self.pad = ReflectPad2d(padding_size)
         if padding == 'zero':
             self.pad = torch.nn.ZeroPad2d()(padding_size)
-        self.conv2d = torch.nn.Conv2d(ins,outs,kernel_size,stride=1,bias=False)
         if DWS:
-            self.conv2d = DWSConv(ins, outs, kernel_size,
-                                  groups=groups,
+            self.conv2d = DWSConv(ins, outs, kernel_size, groups=groups,
                                   norm_type=norm_type,leak=leak)
+        else:
+            self.conv2d = ConvBNReLU(ins, outs, kernel_size, groups=groups,
+                                  norm_type=norm_type,leak=leak)
+            
         self.upsample = upsample
 
     def forward(self, x):
