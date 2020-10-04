@@ -23,7 +23,7 @@ def gram_matrix(input):
         allG.append(gram)
     return torch.stack(allG)
 
-def luminous_val(input):
+def luminous_val(input, color_bins, vec_dot):
     """ weighted sum of all pixels """
     a, b, c, d = input.size()
     weight = b*c*d
@@ -33,32 +33,49 @@ def luminous_val(input):
         allL.append(pix_sum)
     return torch.stack(allL)
 
-'''
-def mod_log(a,b):
-    # note: in JS b==0 => a==0, but for KL this is not necessarily true
-    if a == 0:
-        return 0
-    else:
-        return torch.log(a/b)
+def color_bin(input, color_bins, bin_scale, n_tot):
+    """ weighted sum of all pixels """
+    batch_size, channels, height, width = input.size()
+    all_col = []
+    for i in range(batch_size):
+        bucketed = torch.bucketize(input[i],color_bins)
+        bins = torch.einsum('bcd, b -> cd', bucketed, bin_scale).to(torch.float)
+        col_hist = torch.histc(bins,n_tot,min=0,max=n_tot-1)/(height*width)
+        all_col.append(col_hist)
+    return torch.stack(all_col)
 
-def kl_divergence(p, q):
-    """ Kullback-Liebler divergence """
-    return sum(p[i] * mod_log(p[i],q[i]) for i in range(len(p)))
 
-def js_divergence(p, q):
-    """ Jensen-Shannon Divergence """
-    m = (p + q) / 2 
-    return 0.5  * ( kl_divergence(p,m) + kl_divergence(q,m) )
+class ColorLoss(nn.Module):
+    """ color loss uses a discretized binning over N**3 bins
+        then applys an MAE on this to evaluate
+        the similarity of the two samples
+    """
+    def __init__(self, style_image, n_bins, device):
+        super().__init__()
+        self.device = device
+        self.cpu = torch.device("cpu")
+        self.n_bins = n_bins
+        self.n_tot = n_bins ** 3
+        self.bin_scale = torch.tensor([1, n_bins, n_bins**2]).to(self.cpu)
+        ranging = 2.0/n_bins
+        binning_array = []
+        for i in range(1,n_bins):
+            binning_array.append(i*ranging)
+        self.color_bins = (torch.tensor(binning_array) - 1.).to(self.cpu)
+        self.target = color_bin(style_image.to(self.cpu),self.color_bins,
+                                self.bin_scale, self.n_tot).detach().squeeze()
 
-class JSDivLoss(torch.nn._Loss):
-    """ Jensen-Shannon Divergence """
-    def __init__(self, size_average=None, reduce=None, reduction: str = 'mean') -> None:
-        super(JSDivLoss, self).__init__(size_average, reduce, reduction)
+    def forward(self, input):
+        """ forward pass """
+        input.to(self.cpu)
+        cols = color_bin(input,self.color_bins,self.bin_scale, self.n_tot)
+        batch_size = cols.shape[0]
+        self.loss = F.l1_loss(
+            cols.squeeze(),
+            self.target.repeat(batch_size, 1).squeeze())
+        input.to(self.device)
+        return input
 
-    def forward(self, input, target):
-        combined = (input + target) / 2
-        return 0.5 * (F.kl_div(input, combined) + F.kl_div(target, combined))
-'''
 
 class StyleLoss(nn.Module):
     """ Style loss layer for target style image """
@@ -87,24 +104,6 @@ class StyleLoss(nn.Module):
         self.loss = self.weights[0] * l1_loss + self.weights[1] * l2_loss 
         return input
 
-
-class ColorLoss(nn.Module):
-    """ color loss uses a discretized binning over N**3 bins
-        then applys a Jensen-Shannon divergence on this to evauate
-        the similarity of the two samples
-    """
-    def __init__(self, style_image):
-        super().__init__()
-        self.target = luminous_val(style_image).detach()
-
-    def forward(self, input):
-        """ forward pass """
-        lums = luminous_val(input)
-        batch_size = lums.shape[0]
-        self.loss = F.mse_loss(
-            lums.squeeze(),
-            self.target.repeat(batch_size, 1, 1, 1).squeeze())
-        return input
 
 class ContentTrack(nn.Module):
     """ This modules tracks the content loss across many images

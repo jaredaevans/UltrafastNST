@@ -10,7 +10,7 @@
 import torch
 from layers import Conv, Conv1stLayer, UpConv, UpConvUS, ResLayer, ResShuffleLayer
 from layers import DWSConv, DWSConvT, ConvBNReLU
-from torch.quantization import fuse_modules
+from torch.quantization import fuse_modules, QuantStub, DeQuantStub
 
 
 class ImageTransformer(torch.nn.Module):
@@ -26,13 +26,14 @@ class ImageTransformer(torch.nn.Module):
     def __init__(self,leak=0,
                  norm_type='batch',
                  DWS=True,DWSFL=False,
-                 outerK=3,resgroups=4,
+                 outerK=3,resgroups=1,
                  filters=[8,16,16],
-                 shuffle=True,
+                 shuffle=False,
                  blocks=[2,2,2,1,1,1],
                  endgroups=(1,1),
                  upkern=3,
-                 bias_ll=True):
+                 bias_ll=True,
+                 quant=False):
         super().__init__()
         self.fused = False
         self.leak = leak
@@ -68,6 +69,7 @@ class ImageTransformer(torch.nn.Module):
                                                           leak=leak,
                                                           norm_type=norm_type,
                                                           DWS=DWS,
+                                                          dilation=block,
                                                           groups=resgroups))
                 i += 1
                 
@@ -89,9 +91,19 @@ class ImageTransformer(torch.nn.Module):
                 Conv(filters[0], 3, outerK, 1, DWS=DWSFL, bias=bias_ll)
             )  
         
-        self.transformer = torch.nn.Sequential(self.down_conv,
-                                               self.res_block,
-                                               self.up_conv)
+        if quant:
+            self.quant = QuantStub()
+            self.dequant = DeQuantStub()
+            self.transformer = torch.nn.Sequential(self.quant,
+                                                   self.down_conv,
+                                                   self.res_block,
+                                                   self.up_conv,
+                                                   self.dequant)
+        else:
+            self.transformer = torch.nn.Sequential(self.down_conv,
+                                                   self.res_block,
+                                                   self.up_conv)
+            
 
 
     def fuse(self, inplace=True):

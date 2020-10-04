@@ -7,19 +7,16 @@ import os
 import cv2
 import math
 import random
-import scipy
 import json
-import copy
 import base64
 import zlib
 import numpy as np
-from scipy.ndimage.filters import gaussian_filter
-from PIL import Image, ImageEnhance, ImageOps, ImageFile  
+from PIL import ImageEnhance
 
-import sys
-sys.path.insert(0, '/home/dongx12/Data/cocoapi/PythonAPI/')
-from pycocotools.coco import COCO
-from pycocotools.cocoeval import COCOeval
+#import sys
+#sys.path.insert(0, '/home/dongx12/Data/cocoapi/PythonAPI/')
+#from pycocotools.coco import COCO
+#from pycocotools.cocoeval import COCOeval
 from pycocotools import mask as maskUtils
 
 # global parameter
@@ -69,7 +66,7 @@ def annToRLE(anno, height, width):
         rle = maskUtils.frPyObjects(segm, height, width)
     else:
         # rle
-        rle = ann['segmentation']
+        rle = anno['segmentation']
     return rle
 
 def annToMask(anno, height, width):
@@ -87,28 +84,6 @@ def base64_2_mask(s):
     mask = cv2.imdecode(n, cv2.IMREAD_UNCHANGED)[:, :, 3].astype(bool)
     return mask
 
-def mask_2_base64(mask):
-    img_pil = Image.fromarray(np.array(mask, dtype=np.uint8))
-    img_pil.putpalette([0,0,0,255,255,255])
-    bytes_io = io.BytesIO()
-    img_pil.save(bytes_io, format='PNG', transparency=0, optimize=0)
-    bytes = bytes_io.getvalue()
-    return base64.b64encode(zlib.compress(bytes)).decode('utf-8')
-
-# ===================== deformable data augmentation for input image =====================
-def flip_data(width, keypoint_ori):
-    keypoint = copy.deepcopy(keypoint_ori)
-    for i in xrange(len(keypoint)/3):
-        keypoint[3*i] = width - 1 - keypoint[3*i]
-    right = [2,4, 6,8,10, 12,14,16]
-    left  = [1,3, 5,7,9,  11,13,15]
-    
-    for i in xrange(len(left)):
-        temp = copy.deepcopy(keypoint[3*right[i]:3*(right[i]+1)]) 
-        keypoint[3*right[i]:3*(right[i]+1)] = keypoint[3*left[i]:3*(left[i]+1)]
-        keypoint[3*left[i]:3*(left[i]+1)] = temp
-    return keypoint
-
 def data_aug_flip(image, mask):
     if random.random()<set_ratio:
         return image, mask, False
@@ -121,7 +96,7 @@ def aug_matrix(img_w, img_h, bbox, w, h, angle_range=(-45, 45), scale_range=(0.5
         [0, sy, 0] (dot) [sin(theta),  cos(theta), 0] (dot) [0, 1, dy] (dot) [y]
         [0,  0, 1]       [         0,           0, 1]       [0, 0,  1]       [1]
     '''
-    ratio = 1.0*(bbox[2]-bbox[0])*(bbox[3]-bbox[1])/(img_w*img_h)
+    #ratio = 1.0*(bbox[2]-bbox[0])*(bbox[3]-bbox[1])/(img_w*img_h)
     x_offset = (random.random()-0.5) * 2 * offset
     y_offset = (random.random()-0.5) * 2 * offset
     dx = (w-(bbox[2]+bbox[0]))/2.0 

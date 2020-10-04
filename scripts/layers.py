@@ -81,6 +81,8 @@ class DWSConv(torch.nn.Module):
         self.leak = leak
         if leak == 0:
             self.relu = torch.nn.ReLU(inplace=True)
+        if leak == -1:
+            self.relu = torch.nn.Identity()
         else:
             self.relu = torch.nn.LeakyReLU(leak)
 
@@ -283,30 +285,23 @@ class ResLayer(torch.nn.Module):
     """ Basic residual layer to import into ImageTransformer
     """
     def __init__(self,channels,kernel_size=3,leak=0.05,norm_type='batch',
-                 DWS=False, groups=1):
+                 DWS=False, dilation=1, groups=1):
         super().__init__()
-        if norm_type == 'batch':
-            norm_layer = torch.nn.BatchNorm2d
-        else:
-            norm_layer = torch.nn.InstanceNorm2d
-        self.conv1 = Conv(channels,channels,kernel_size,DWS=DWS, groups=groups,
-                          norm_type=norm_type)
-        self.norm1 = norm_layer(channels, affine=True)
+        self.conv1 = Conv(channels,channels,kernel_size,DWS=DWS,groups=groups,
+                          norm_type=norm_type,dilation=dilation,leak=leak)
+        self.conv2 = Conv(channels,channels,kernel_size,DWS=DWS,groups=groups,
+                          norm_type=norm_type,leak=-1)
+        self.skip_add = FF()
         self.leak = leak
         if leak == 0:
             self.relu = torch.nn.ReLU(inplace=True)
         else:
             self.relu = torch.nn.LeakyReLU(leak)
-        self.conv2 = Conv(channels,channels,kernel_size,DWS=DWS,
-                          norm_type=norm_type)
-        self.norm2 = norm_layer(channels, affine=True)
-        self.skip_add = FF()
 
     def forward(self, ins):
         """ forward pass """
         res = ins
-        out = self.relu(self.norm1(self.conv1(ins)))
-        out = self.norm2(self.conv2(out))
+        out = self.conv2(self.conv1(ins))
         return self.relu(self.skip_add.add(out,res))
 
 

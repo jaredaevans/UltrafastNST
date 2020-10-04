@@ -40,10 +40,23 @@ def build_model(idkey):
                             DWS=False,DWSFL=False,
                             outerK=3,resgroups=1,
                             filters=[8,16,16],
-                            shuffle=True,
+                            shuffle=False,
                             blocks=[2,2,2,1,1,1],
-                            endgroups=(1,1),
                             upkern=3,
+                            quant=False,
+                            bias_ll=True)
+        model.eval()
+        model.fuse()
+    elif idkey=='X':
+        model = ImageTransformer(leak=0,
+                            norm_type='batch',
+                            DWS=False,DWSFL=False,
+                            outerK=3,resgroups=1,
+                            filters=[8,16,16],
+                            shuffle=False,
+                            blocks=[2,2,1,1],
+                            upkern=3,
+                            quant=False,
                             bias_ll=True)
         model.eval()
         model.fuse()
@@ -115,7 +128,7 @@ def stylize_video(): #save_vid=False:
     num_benches = len(bench_list)
     bench_id = 0
     
-    models_list = ['W',"V",'A','C']
+    models_list = ['W','A','X']
     num_models = len(models_list)
     model_id = 0
     

@@ -8,8 +8,8 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 
-from losses import VariationalLoss, ContentTrack, StyleLoss, StyleTrack, gram_matrix
-
+from losses import VariationalLoss, ContentTrack, StyleLoss, StyleTrack
+from losses import gram_matrix, ColorLoss
 
 class Normalization(nn.Module):
     """ Layer to normalize input image so we can easily put it in the
@@ -29,6 +29,7 @@ class Normalization(nn.Module):
 def build_vgg19(style_img,
                 style_layers,
                 content_layers,
+                #n_col_bins=8,
                 content_style_layers=None):
     """ Master function for building the vgg19 to be placed at the
         end of the image transformer
@@ -60,10 +61,14 @@ def build_vgg19(style_img,
 
     model = nn.Sequential()
 
-    #add variational loss layer for smooth images
+    # add variational loss layer for smooth images
     vl = VariationalLoss()
     model.add_module("var_loss", vl)
     var_loss = vl
+    
+    # add color loss layer to force colors to be aligned between im and target 
+    #color_loss = ColorLoss(style_img,n_col_bins,device)
+    #model.add_module("color_loss", color_loss)
 
     # add normalization for VGG format
     model.add_module("norm", normalization)
@@ -116,6 +121,7 @@ def build_vgg19(style_img,
 
     model = model[:(i + 1)]
 
+    #color_loss,
     return model, style_losses, content_losses, var_loss, content_style_losses
 
 
