@@ -9,7 +9,7 @@ import random
 import matplotlib.pyplot as plt
 
 from vgg19 import build_vgg19, get_vgg19_content
-from losses import GetContentLoss
+from losses import GetContentLoss, SoftDiceLoss, FocalLoss
 
 
 def prepandclip(img):
@@ -202,10 +202,10 @@ class Trainer():
         
         pass_sep = False
         if type(style_weight) is tuple:
-            if type(style_weight[0]) is tuple or len(style_weight[0])>2:
+            if type(style_weight[0]) is tuple or len(style_weight)>2:
                 pass_sep = True
         if pass_sep:
-            assert len(style_weight[0]) == len(self.style_losses)
+            assert len(style_weight) == len(self.style_losses)
             for i, style_layer in enumerate(self.style_losses):
                 style_layer.new_weights(style_weight[i])
         else:
@@ -289,11 +289,37 @@ class SegmentTrainer():
         self.segmenter = segmenter.to(device)
         self.optimizer = torch.optim.Adam(self.transformer.parameters(),
                                           lr=0.01,betas=(0.98,0.9999))
+        self.diceloss = SoftDiceLoss()
+        self.focalloss = FocalLoss()
         
-    def step(self,inputs,losses):
-        print('step')
+    def step(self,imgs,masks,losses):
+        """ take a step on gpu """
+        # put on gpu
+        imgs = imgs.to(self.device)
+        masks = masks.to(self.device)
+        
+        # add noise to image for stabilization
+        #noise = torch.zeros_like(imgs)
+        #noise.normal_(mean=0, std=0.016)
+        # get the content and content_style targets
+
+        # forward + backward + optimize
+        masks_pred, edge_pred = self.segmenter(imgs)
+        
+        dice_score = self.diceloss(masks,masks_pred)
+        #edge_score = 0
+        #stab_score = 0
+        
+        #dice_score *= self.dice_weight
+        
+        loss = dice_score
+        
+        imgs = imgs.to(self.cpu)
+        masks = masks.to(self.cpu)
+        
+        return loss
     
-    def train(self,data,epochs=50,lr=0.01,batch_size=4,num_workers=1,
+    def train(self,data,epochs=50,lr=0.01,batch_size=16,num_workers=1,
               epoch_show=20,best_path="best.pth",es_patience=5,
               test_image=None,test_im_show=5):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

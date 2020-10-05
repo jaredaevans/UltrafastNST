@@ -70,3 +70,24 @@ class InputDataset(torch.utils.data.Dataset):
             idx = idx.tolist()
         sample = [self.imgs[idx], self.nulltens]
         return sample
+
+
+class PortraitSegDataset(torch.utils.data.Dataset):
+    """ join the x, y into a dataset """
+    def __init__(self, imgs, masks):
+        """
+        Args:
+            imgs(tensor): loaded x image dataset
+        """
+        self.imgs = imgs
+        self.masks = masks
+
+    def __len__(self):
+        return len(self.imgs)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        sample = [self.imgs[idx], self.masks[idx]]
+        return sample
+
