@@ -18,7 +18,7 @@ class PortraitSegmenter(torch.nn.Module):
         scale up the result.
     """
     def __init__(self,resgroups=1,expansion=6,
-                 filters=[16,24,32,48],endchannels=[8,2],groupings=(1,1),
+                 filters=[16,24,32,48],endchannels=[8,1],groupings=(1,1),
                  upkern=3,bias_ll=False):
         super().__init__()
         # drop to 1/2
@@ -92,8 +92,6 @@ class PortraitSegmenter(torch.nn.Module):
         x3 = self.level3(x2)
         
         up2 = self.deconv3(x3)
-        print(up2.shape)
-        print(x2.shape)
         up1 = self.deconv2(x2+up2)
         up0 = self.deconv1(x1+up1)
         

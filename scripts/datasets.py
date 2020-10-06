@@ -90,4 +90,3 @@ class PortraitSegDataset(torch.utils.data.Dataset):
             idx = idx.tolist()
         sample = [self.imgs[idx], self.masks[idx]]
         return sample
-

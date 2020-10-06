@@ -129,7 +129,7 @@ class Trainer():
         dx = random.choice([-4,-3,-2,-1,1,2,3,4])
         dy = random.choice([-4,-3,-2,-1,1,2,3,4])
         inputs_shift = torch.roll(inputs, shifts=(dx, dy), dims=(2, 3))
-        noise.normal_(mean=0, std=0.02)
+        noise.normal_(mean=0, std=0.016)
         sty_image_shift = self.transformer(inputs_shift + noise)
         sty_image_shift = torch.roll(sty_image_shift,
                                      shifts=(-dx, -dy),dims=(2, 3))
@@ -287,7 +287,7 @@ class SegmentTrainer():
     def __init__(self,segmenter):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.segmenter = segmenter.to(device)
-        self.optimizer = torch.optim.Adam(self.transformer.parameters(),
+        self.optimizer = torch.optim.Adam(self.segmenter.parameters(),
                                           lr=0.01,betas=(0.98,0.9999))
         self.diceloss = SoftDiceLoss()
         self.focalloss = FocalLoss()
@@ -319,7 +319,7 @@ class SegmentTrainer():
         
         return loss
     
-    def train(self,data,epochs=50,lr=0.01,batch_size=16,num_workers=1,
+    def train(self,data,val=None,epochs=10,lr=0.01,batch_size=16,num_workers=1,
               epoch_show=20,best_path="best.pth",es_patience=5,
               test_image=None,test_im_show=5):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -328,25 +328,60 @@ class SegmentTrainer():
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
             
+        total_dat = len(data)
+            
         trainloader = torch.utils.data.DataLoader(data, batch_size=batch_size,
                                           shuffle=True, num_workers=num_workers)
         
+        if val is not None:
+            valloader = torch.utils.data.DataLoader(val, batch_size=batch_size,
+                                          shuffle=False, num_workers=num_workers)
+            es = 0
+            vl_best = 1e8
+        
         k = 0
         running_losses = [0,0,0,0,0]
-        for epoch in range(epochs):  # loop over the dataset multiple times
+        for epoch in range(epochs):  
+            print("On epoch {} of {}".format(epoch+1,epochs))
+            # loop over the dataset multiple times
             for i, image_dat in enumerate(trainloader, 0):
                 # get the inputs; data is a list of [inputs, content]
-                inputs, content = image_dat
+                imgs, masks = image_dat
 
                 # zero the parameter gradients
                 self.optimizer.zero_grad()
         
                 # forward + backward + optimize
-                loss = self.step(inputs,running_losses)
+                loss = self.step(imgs, masks, running_losses)
                 loss.backward()
                 self.optimizer.step()
                 k += 1
-         
+                if i % 10 == 9:
+                    print("  Processed {}/{} images".format(i*batch_size,total_dat))
+            if val is not None:
+                val_losses = [0,0,0,0,0,0]
+                with torch.no_grad():
+                    vk = 0
+                    es += 1
+                    for i, image_dat in enumerate(valloader, 0):
+                        # validation step
+                        imgs, masks = image_dat
+                        loss = self.step(imgs, masks, val_losses)
+                        vk = i
+                    #self.update_history(history,epoch,running_losses,k,
+                    #                    val_losses, vk)
+                    vl_cur = sum(val_losses)/vk             
+                    if vl_cur < vl_best:
+                        vl_best = vl_cur
+                        torch.save(self.transformer.state_dict(), best_path)
+                        es = 0
+                    if test_image is not None:
+                        if epoch % test_im_show == test_im_show - 1:
+                            show_test_image_quality(self.segmenter,
+                                                    test_image,self.device)
+                    if es >= es_patience:
+                        print("No improvement for {} epochs, ceasing training".format(es_patience))
+                        break
     
     
 
