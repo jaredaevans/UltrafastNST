@@ -287,6 +287,10 @@ class SegmentTrainer():
     def __init__(self,segmenter):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.segmenter = segmenter.to(device)
+        if device == torch.device("cuda"):
+            self.segmenter.cuda()
+        else:
+            self.segmenter.cpu()
         self.optimizer = torch.optim.Adam(self.segmenter.parameters(),
                                           lr=0.01,betas=(0.98,0.9999))
         self.diceloss = SoftDiceLoss()

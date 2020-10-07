@@ -154,15 +154,15 @@ def data_aug_color(image):
     random_factor = np.random.randint(4, 17) / 10. 
     brightness_image = ImageEnhance.Brightness(color_image).enhance(random_factor)
     random_factor = np.random.randint(6, 15) / 10. 
-    contrast_image = ImageEnhance.Contrast(brightness_image).enhance(random_factor)
-    random_factor = np.random.randint(8, 13) / 10.
-    return ImageEnhance.Sharpness(contrast_image).enhance(random_factor)
+    return ImageEnhance.Contrast(brightness_image).enhance(random_factor)
+    #random_factor = np.random.randint(8, 13) / 10.
+    #return ImageEnhance.Sharpness(contrast_image).enhance(random_factor)
 
-def data_aug_noise(image):
+def data_aug_noise(image,scale=10.0):
     if random.random()<set_ratio:
         return image
     mu = 0
-    sigma = random.random()*10.0
+    sigma = random.random()*scale
     image = np.array(image, dtype=np.float32)
     image += np.random.normal(mu, sigma, image.shape)
     image[image>255] = 255
@@ -217,127 +217,3 @@ def Anti_Normalize_Img(imgOri, scale, mean, val):
         for i in range(len(mean)):
             img[:,:,i] = img[:,:,i]/val[i]+mean[i]
         return np.array(img*scale, np.uint8)
-    
-# ===================== generate prior channel for input image =====================
-def data_motion_blur(image, mask):
-    if random.random()<set_ratio:
-        return image, mask
-    
-    degree = random.randint(5, 30)
-    angle = random.randint(0, 360)
-    
-    M = cv2.getRotationMatrix2D((degree/2, degree/2), angle, 1)
-    motion_blur_kernel = np.diag(np.ones(degree))
-    motion_blur_kernel = cv2.warpAffine(motion_blur_kernel, M, (degree, degree))
-    motion_blur_kernel = motion_blur_kernel/degree
-    
-    img_blurred = cv2.filter2D(image, -1, motion_blur_kernel)
-    mask_blurred = cv2.filter2D(mask, -1, motion_blur_kernel)
-    
-    cv2.normalize(img_blurred, img_blurred, 0, 255, cv2.NORM_MINMAX)
-    cv2.normalize(mask_blurred, mask_blurred, 0, 1, cv2.NORM_MINMAX)
-    return img_blurred, mask_blurred
-    
-def data_motion_blur_prior(prior):
-    if random.random()<set_ratio:
-        return prior
-    
-    degree = random.randint(5, 30)
-    angle = random.randint(0, 360)
-    
-    M = cv2.getRotationMatrix2D((degree/2, degree/2), angle, 1)
-    motion_blur_kernel = np.diag(np.ones(degree))
-    motion_blur_kernel = cv2.warpAffine(motion_blur_kernel, M, (degree, degree))
-    motion_blur_kernel = motion_blur_kernel/degree
-    
-    prior_blurred = cv2.filter2D(prior, -1, motion_blur_kernel)
-    return prior_blurred  
-    
-def data_Affine(image, mask, height, width, ratio=0.05):
-    if random.random()<set_ratio:
-        return image, mask
-    bias = np.random.randint(-int(height*ratio),int(width*ratio), 12)
-    pts1 = np.float32([[0+bias[0], 0+bias[1]], [width+bias[2], 0+bias[3]], [0+bias[4], height+bias[5]]])
-    pts2 = np.float32([[0+bias[6], 0+bias[7]], [width+bias[8], 0+bias[9]], [0+bias[10], height+bias[11]]])
-    M = cv2.getAffineTransform(pts1, pts2)
-    img_affine = cv2.warpAffine(image, M, (width, height))
-    mask_affine = cv2.warpAffine(mask, M, (width, height))
-    return img_affine, mask_affine
-
-def data_Affine_prior(prior, height, width, ratio=0.05):
-    if random.random()<set_ratio:
-        return prior
-    bias = np.random.randint(-int(height*ratio),int(width*ratio), 12)
-    pts1 = np.float32([[0+bias[0], 0+bias[1]], [width+bias[2], 0+bias[3]], [0+bias[4], height+bias[5]]])
-    pts2 = np.float32([[0+bias[6], 0+bias[7]], [width+bias[8], 0+bias[9]], [0+bias[10], height+bias[11]]])
-    M = cv2.getAffineTransform(pts1, pts2)
-    prior_affine = cv2.warpAffine(prior, M, (width, height))
-    return prior_affine
-    
-def data_Perspective(image, mask, height, width, ratio=0.05):
-    if random.random()<set_ratio:
-        return image, mask
-    bias = np.random.randint(-int(height*ratio),int(width*ratio), 16)
-    pts1 = np.float32([[0+bias[0],0+bias[1]], [height+bias[2],0+bias[3]], 
-                       [0+bias[4],width+bias[5]], [height+bias[6], width+bias[7]]])
-    pts2 = np.float32([[0+bias[8],0+bias[9]], [height+bias[10],0+bias[11]], 
-                       [0+bias[12],width+bias[13]], [height+bias[14], width+bias[15]]])
-    M = cv2.getPerspectiveTransform(pts1, pts2)
-    img_perspective = cv2.warpPerspective(image, M, (width, height))
-    mask_perspective = cv2.warpPerspective(mask, M, (width, height))
-    return img_perspective, mask_perspective
-
-def data_Perspective_prior(prior, height, width, ratio=0.05):
-    if random.random()<set_ratio:
-        return prior
-    bias = np.random.randint(-int(height*ratio),int(width*ratio), 16)
-    pts1 = np.float32([[0+bias[0],0+bias[1]], [height+bias[2],0+bias[3]], 
-                       [0+bias[4],width+bias[5]], [height+bias[6], width+bias[7]]])
-    pts2 = np.float32([[0+bias[8],0+bias[9]], [height+bias[10],0+bias[11]], 
-                       [0+bias[12],width+bias[13]], [height+bias[14], width+bias[15]]])
-    M = cv2.getPerspectiveTransform(pts1, pts2)
-    prior_perspective = cv2.warpPerspective(prior, M, (width, height))
-    return prior_perspective
-
-def data_ThinPlateSpline(image, mask, height, width, ratio=0.05):
-    if random.random()<set_ratio:
-        return image, mask
-    bias = np.random.randint(-int(height*ratio),int(width*ratio), 16)
-    tps = cv2.createThinPlateSplineShapeTransformer()
-    sshape = np.array([[0+bias[0],0+bias[1]], [height+bias[2],0+bias[3]], 
-                       [0+bias[4],width+bias[5]], [height+bias[6], width+bias[7]]], np.float32)
-    tshape = np.array([[0+bias[8],0+bias[9]], [height+bias[10],0+bias[11]], 
-                       [0+bias[12],width+bias[13]], [height+bias[14], width+bias[15]]], np.float32)
-    sshape = sshape.reshape(1,-1,2)
-    tshape = tshape.reshape(1,-1,2)
-    matches = list()
-    matches.append(cv2.DMatch(0,0,0))
-    matches.append(cv2.DMatch(1,1,0))
-    matches.append(cv2.DMatch(2,2,0))
-    matches.append(cv2.DMatch(3,3,0))
-    
-    tps.estimateTransformation(tshape, sshape, matches)
-    res = tps.warpImage(image)
-    res_mask = tps.warpImage(mask)
-    return res, res_mask   
-
-def data_ThinPlateSpline_prior(prior, height, width, ratio=0.05):
-    if random.random()<set_ratio:
-        return prior
-    bias = np.random.randint(-int(height*ratio),int(width*ratio), 16)
-    tps = cv2.createThinPlateSplineShapeTransformer()
-    sshape = np.array([[0+bias[0],0+bias[1]], [height+bias[2],0+bias[3]], 
-                       [0+bias[4],width+bias[5]], [height+bias[6], width+bias[7]]], np.float32)
-    tshape = np.array([[0+bias[8],0+bias[9]], [height+bias[10],0+bias[11]], 
-                       [0+bias[12],width+bias[13]], [height+bias[14], width+bias[15]]], np.float32)
-    sshape = sshape.reshape(1,-1,2)
-    tshape = tshape.reshape(1,-1,2)
-    matches = list()
-    matches.append(cv2.DMatch(0,0,0))
-    matches.append(cv2.DMatch(1,1,0))
-    matches.append(cv2.DMatch(2,2,0))
-    matches.append(cv2.DMatch(3,3,0))
-    
-    tps.estimateTransformation(tshape, sshape, matches)
-    prior = tps.warpImage(prior)
-    return prior
