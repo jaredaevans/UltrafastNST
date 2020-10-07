@@ -18,11 +18,18 @@ class PortraitSegmenter(torch.nn.Module):
     """ This is out UNet style segmenter.  We work on a small image, and 
         scale up the result.
     """
-    def __init__(self,resgroups=1,expansion=6, dilate_channels=32,
+    def __init__(self,resgroups=1,expansion=6, num_levels=4, 
+                 down_depth = [0,2,2,2], up_depth = [0,1,1],
                  filters=[16,24,32,48],endchannels=[16,1],groupings=(1,1),
-                 upkern=3,use_JPU=False,bias_ll=False):
+                 upkern=3,use_JPU=False,dilate_channels=32,bias_ll=False):
         super().__init__()
-        self.useJPU = use_JPU
+        self.useJPU = False #use_JPU
+        assert len(filters) == num_levels
+        assert len(down_depth) == num_levels
+        assert len(up_depth) == num_levels-1
+        
+        self.num_levels = num_levels
+        
         # drop to 1/2
         self.level0 = Sequential(
             Conv(3,filters[0],DWS=False,stride=2),
@@ -49,7 +56,7 @@ class PortraitSegmenter(torch.nn.Module):
             InvertedResidual(filters[3],filters[3],expansion)
             )
         
-        if use_JPU:
+        if use_JPU: # note:  This is a stub
             self.dilation1 = DWSConv(dilate_channels,dilate_channels,3, 
                                      dilation=1,bias=False,pad=True)
             self.dilation1 = DWSConv(dilate_channels,dilate_channels,3, 
@@ -60,23 +67,29 @@ class PortraitSegmenter(torch.nn.Module):
                                      dilation=8,bias=False,pad=True)
         else:
             if upkern==3:
-                self.res2 = ResLayer(filters[2],filters[2],DWS=True,leak=0)
-                self.res1 = ResLayer(filters[1],filters[1],DWS=True,leak=0)
-                self.res0 = ResLayer(filters[0],filters[0],DWS=True,leak=0)
-                
                 self.deconv3 = UpConvUS(filters[3],filters[2],upsample=2,DWS=True)
-                self.deconv2 = UpConvUS(2*filters[2],filters[1],upsample=2,DWS=True)
-                self.deconv1 = UpConvUS(2*filters[1],filters[0],upsample=2,DWS=True)
-                self.deconv0 = UpConvUS(2*filters[0],endchannels[0],upsample=2,DWS=True)
+                self.deconv2 = UpConvUS(filters[2],filters[1],upsample=2,DWS=True)
+                self.deconv1 = UpConvUS(filters[1],filters[0],upsample=2,DWS=True)
+                self.deconv0 = UpConvUS(filters[0],endchannels[0],upsample=2,DWS=True)
             else:
-                self.res2 = ResLayer(filters[2],filters[2],DWS=True,leak=0)
-                self.res1 = ResLayer(filters[1],filters[1],DWS=True,leak=0)
-                self.res0 = ResLayer(filters[0],filters[0],DWS=True,leak=0)
                 
                 self.deconv3 = UpConv(filters[3],filters[2],upsample=2,DWS=True)
-                self.deconv2 = UpConv(2*filters[2],filters[1],upsample=2,DWS=True)
-                self.deconv1 = UpConv(2*filters[1],filters[0],upsample=2,DWS=True)
-                self.deconv0 = UpConv(2*filters[0],endchannels[0],upsample=2,DWS=True)
+                self.deconv2 = UpConv(filters[2],filters[1],upsample=2,DWS=True)
+                self.deconv1 = UpConv(filters[1],filters[0],upsample=2,DWS=True)
+                self.deconv0 = UpConv(filters[0],endchannels[0],upsample=2,DWS=True)
+        
+        self.decoder2 = Sequential(
+            InvertedResidual(2*filters[2],filters[2],expansion),
+            InvertedResidual(filters[2],filters[2],expansion)
+            )
+        self.decoder1 = Sequential(
+            InvertedResidual(2*filters[1],filters[1],expansion),
+            InvertedResidual(filters[1],filters[1],expansion)
+            )
+        self.decoder0 = Sequential(
+            InvertedResidual(2*filters[0],filters[0],expansion),
+            InvertedResidual(filters[0],filters[0],expansion)
+            )
             
         self.pred = Conv(endchannels[0],endchannels[1],DWS=False,bias=bias_ll)
         self.edge = Conv(endchannels[0],endchannels[1],DWS=False,bias=bias_ll)
@@ -122,10 +135,10 @@ class PortraitSegmenter(torch.nn.Module):
         x3 = self.level3(x2)
         
         up2 = self.deconv3(x3)
-        up1 = self.deconv2(torch.cat((self.res2(x2),up2),dim=1))
-        up0 = self.deconv1(torch.cat((self.res1(x1),up1),dim=1))
-        
-        penult = self.deconv0(torch.cat((self.res0(x1),up0),dim=1))
+        up1 = self.deconv2(self.decoder2(torch.cat((x2,up2),dim=1)))
+        up0 = self.deconv1(self.decoder1(torch.cat((x1,up1),dim=1)))
+        penult = self.deconv0(self.decoder0(torch.cat((x0,up0),dim=1)))
+    
         mask_pred = self.dequant(self.pred(penult))
         edge = self.dequant(self.edge(penult))
         

@@ -290,7 +290,10 @@ class SegmentTrainer():
         self.optimizer = torch.optim.Adam(self.segmenter.parameters(),
                                           lr=0.01,betas=(0.98,0.9999))
         self.diceloss = SoftDiceLoss()
+        # Note: FocalLoss may not be very useful 
         self.focalloss = FocalLoss(gamma=2)
+        self.KLloss = torch.nn.KLDivLoss(reduction='batchmean')
+        self.CEloss = torch.nn.BCEWithLogitsLoss()
         
     def calcIOU(self, mask, mask_pred):
         """ use torch tensors with values of 0 or 1 """
@@ -322,8 +325,15 @@ class SegmentTrainer():
         # forward + backward + optimize
         masks_pred, edge_pred = self.segmenter(imgs)
         
-        dice_score = self.diceloss(masks_pred,masks.unsqueeze(1))
-        edge_score = self.focalloss(edge_pred,edge)
+        if self.useKL:
+            dice_score = self.KLloss(masks_pred,masks.unsqueeze(1)*1.)
+            edge_score = self.KLloss(edge_pred,edge.unsqueeze(1)*1.)
+        else:
+            dice_score = self.CEloss(masks_pred,masks.unsqueeze(1)*1.)
+            edge_score = self.CEloss(edge_pred,edge.unsqueeze(1)*1.)
+            
+            #dice_score = self.diceloss(masks_pred,masks.unsqueeze(1))
+            #edge_score = self.focalloss(edge_pred,edge)
         dice_score *= self.dice_weight
         
         loss = dice_score + edge_score
@@ -343,7 +353,7 @@ class SegmentTrainer():
     
     def train(self,data,val=None,epochs=10,lr=0.01,batch_size=16,num_workers=1,
               epoch_show=20,best_path="best.pth",es_patience=5,dice_weight=10,
-              test_image=None,test_im_show=5):
+              test_image=None,test_im_show=5, useKL=False):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.cpu = torch.device("cpu")
         self.dice_weight = dice_weight
@@ -351,7 +361,7 @@ class SegmentTrainer():
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
             
-        total_dat = len(data)
+        self.useKL = useKL
             
         trainloader = torch.utils.data.DataLoader(data, batch_size=batch_size,
                                           shuffle=True, num_workers=num_workers)
