@@ -12,11 +12,6 @@ import base64
 import zlib
 import numpy as np
 from PIL import ImageEnhance
-
-#import sys
-#sys.path.insert(0, '/home/dongx12/Data/cocoapi/PythonAPI/')
-#from pycocotools.coco import COCO
-#from pycocotools.cocoeval import COCOeval
 from pycocotools import mask as maskUtils
 
 # global parameter
@@ -35,18 +30,18 @@ def mask_to_bbox(mask):
 # ===================== generate edge for input image =====================
 def show_edge(mask_ori):
     mask = mask_ori.copy()
-    # find countours: img must be binary
+    # find contours: img must be binary
     myImg = np.zeros((mask.shape[0], mask.shape[1]), np.uint8)
     ret, binary = cv2.threshold(np.uint8(mask)*255, 127, 255, cv2.THRESH_BINARY)
-    img, countours, hierarchy = cv2.findContours(binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE) # RETR_EXTERNAL
+    contours, hierarchy = cv2.findContours(binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE) # RETR_EXTERNAL
     '''
-    cv2.drawContours(myImg, countours, -1, 1, 10)
+    cv2.drawContours(myImg, contours, -1, 1, 10)
     diff = mask + myImg
     diff[diff < 2] = 0
     diff[diff == 2] = 1
     return diff   
     '''
-    cv2.drawContours(myImg, countours, -1, 1, 4)
+    cv2.drawContours(myImg, contours, -1, 1, 4)
     return myImg
 
 # ===================== load mask =====================

@@ -290,13 +290,29 @@ class SegmentTrainer():
         self.optimizer = torch.optim.Adam(self.segmenter.parameters(),
                                           lr=0.01,betas=(0.98,0.9999))
         self.diceloss = SoftDiceLoss()
-        self.focalloss = FocalLoss()
+        self.focalloss = FocalLoss(gamma=2)
         
-    def step(self,imgs,masks,losses):
+    def calcIOU(self, mask, mask_pred):
+        """ use torch tensors with values of 0 or 1 """
+        sum1 = mask + mask_pred
+        sum1[sum1>0] = 1
+        sum1[sum1<=0] = 0
+        x = torch.sum(sum1)
+        if x == 0: # union = 0
+            return 1.
+        sum2 = mask + mask_pred
+        sum2[sum2<2] = 0
+        sum2[sum2>=2] = 1
+        y = torch.sum(sum2)
+        return 1.0*(y/x).item()
+        
+    def step(self,imgs,masks,edge,losses):
         """ take a step on gpu """
+        
         # put on gpu
         imgs = imgs.to(self.device)
         masks = masks.to(self.device)
+        edge = edge.to(self.device)
         
         # add noise to image for stabilization
         #noise = torch.zeros_like(imgs)
@@ -306,24 +322,31 @@ class SegmentTrainer():
         # forward + backward + optimize
         masks_pred, edge_pred = self.segmenter(imgs)
         
-        dice_score = self.diceloss(masks,masks_pred)
-        #edge_score = 0
-        #stab_score = 0
+        dice_score = self.diceloss(masks_pred,masks.unsqueeze(1))
+        edge_score = self.focalloss(edge_pred,edge)
+        dice_score *= self.dice_weight
         
-        #dice_score *= self.dice_weight
+        loss = dice_score + edge_score
         
-        loss = dice_score
+        # IOU is not used for loss, but is for tracking
+        IoU = self.calcIOU(masks, masks_pred)
+        
+        losses[0] += dice_score.item()
+        losses[1] += edge_score.item()
+        losses[2] += IoU
         
         imgs = imgs.to(self.cpu)
         masks = masks.to(self.cpu)
+        edge = edge.to(self.cpu)
         
         return loss
     
     def train(self,data,val=None,epochs=10,lr=0.01,batch_size=16,num_workers=1,
-              epoch_show=20,best_path="best.pth",es_patience=5,
+              epoch_show=20,best_path="best.pth",es_patience=5,dice_weight=10,
               test_image=None,test_im_show=5):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.cpu = torch.device("cpu")
+        self.dice_weight = dice_weight
         #set the learning rate
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
@@ -339,25 +362,25 @@ class SegmentTrainer():
             es = 0
             vl_best = 1e8
         
-        k = 0
-        running_losses = [0,0,0,0,0]
-        for epoch in range(epochs):  
+        for epoch in range(epochs): 
+            k = 0
+            running_losses = [0,0,0,0,0]
             print("On epoch {} of {}".format(epoch+1,epochs))
             # loop over the dataset multiple times
             for i, image_dat in enumerate(trainloader, 0):
                 # get the inputs; data is a list of [inputs, content]
-                imgs, masks = image_dat
+                imgs_ori, imgs, edges, masks = image_dat
 
                 # zero the parameter gradients
                 self.optimizer.zero_grad()
         
                 # forward + backward + optimize
-                loss = self.step(imgs, masks, running_losses)
+                loss = self.step(imgs, masks, edges, running_losses)
                 loss.backward()
                 self.optimizer.step()
                 k += 1
-                if i % 10 == 9:
-                    print("  Processed {}/{} images".format(i*batch_size,total_dat))
+            num_ev = (k+1)*batch_size
+            print("  Training on {} images;  IoU = {}".format(num_ev,running_losses[2]/(k+1)))
             if val is not None:
                 val_losses = [0,0,0,0,0,0]
                 with torch.no_grad():
@@ -365,15 +388,17 @@ class SegmentTrainer():
                     es += 1
                     for i, image_dat in enumerate(valloader, 0):
                         # validation step
-                        imgs, masks = image_dat
-                        loss = self.step(imgs, masks, val_losses)
+                        imgs_ori, imgs, edges, masks = image_dat
+                        loss = self.step(imgs, masks, edges, val_losses)
                         vk = i
+                    num_ev = (vk+1)*batch_size
+                    print("  Validation on {} images:  IoU = {}".format(num_ev,val_losses[2]/(vk+1)))
                     #self.update_history(history,epoch,running_losses,k,
                     #                    val_losses, vk)
                     vl_cur = sum(val_losses)/vk             
                     if vl_cur < vl_best:
                         vl_best = vl_cur
-                        torch.save(self.transformer.state_dict(), best_path)
+                        torch.save(self.segmenter.state_dict(), best_path)
                         es = 0
                     if test_image is not None:
                         if epoch % test_im_show == test_im_show - 1:

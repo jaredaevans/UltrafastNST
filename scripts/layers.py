@@ -65,15 +65,19 @@ class DWSConv(torch.nn.Module):
         optional grouping on the pointwise conv
     """
     def __init__(self,ins,outs,kernel_size=3,stride=1,groups=1,dilation=1,
-                 norm_type='batch',bias=False,leak=0):
+                 norm_type='batch',bias=False,leak=0,pad=False):
         super().__init__()
+        if pad:
+            padding = dilation
+        else:
+            padding = 0
         if norm_type == 'batch':
             norm_layer = torch.nn.BatchNorm2d
         else:
             norm_layer = torch.nn.InstanceNorm2d
         self.depthwise = torch.nn.Conv2d(ins, ins, kernel_size, stride=stride, 
                                          groups=ins, dilation=dilation, 
-                                         bias=False)
+                                         padding=padding, bias=False)
         self.norm1 = norm_layer(ins, affine=True)
         self.pointwise = torch.nn.Conv2d(ins, outs, 1, groups=groups, 
                                          bias=bias)
@@ -306,8 +310,8 @@ class ResLayer(torch.nn.Module):
 
 
 class Layer131(torch.nn.Module):
-    """ 1-3-1 residual layer to import into ImageTransformer
-        key component of shufflenetv2 and mobilenet v2
+    """ 1-3-1 residual layer to import into PortraitSegmenter
+        key component of mobilenet v2
     """
     def __init__(self,ins,outs,mids,kernel_size=3,leak=0.05,norm_type='batch',
                  groups=1,dilation=1,stride=1):

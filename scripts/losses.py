@@ -280,10 +280,15 @@ class FocalLoss(nn.Module):
             input = input.contiguous().view(-1,input.size(2)) # N,H*W,C => N*H*W,C
         target = target.view(-1,1)
 
-        logpt = F.log_softmax(input)
+        """logpt = F.log_softmax(input)
         logpt = logpt.gather(1,target)
         logpt = logpt.view(-1)
-        pt = Variable(logpt.data.exp())
+        pt = Variable(logpt.data.exp())"""
+        
+        logpt =  F.log_softmax(input, dim=0)
+        logpt = torch.gather(logpt,0,target.to(torch.int64))
+        logpt = logpt.view(-1)
+        pt = torch.autograd.Variable(logpt.data.exp())
 
         if self.alpha is not None:
             if self.alpha.type()!=input.data.type():

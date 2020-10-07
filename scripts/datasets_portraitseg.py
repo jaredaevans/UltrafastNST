@@ -29,7 +29,11 @@ class PortraitSegDatasetAug(torch.utils.data.Dataset):
         self.masks = masks
         self.input_width = 64
         self.input_height = 64
-
+        self.padding_color = 128
+        self.img_scale = 1.
+        self.img_mean = [128., 128., 128.] # BGR
+        self.img_val = [2./255., 2./255., 2./255.] # BGR
+        
     def __len__(self):
         return len(self.imgs)
 
