@@ -12,6 +12,7 @@ import numpy as np
 from numpy import flip, clip
 
 from ImageTransformer import ImageTransformer
+from portraitsegmenter import PortraitSegmenter
 
 def build_model(idkey):
     """
@@ -46,7 +47,7 @@ def build_model(idkey):
                             quant=False,
                             bias_ll=True)
         model.eval()
-        model.fuse()
+        #model.fuse()
     elif idkey=='X':
         model = ImageTransformer(leak=0,
                             norm_type='batch',
@@ -91,6 +92,9 @@ def build_model(idkey):
                                 blocks=[1,1,1,1])
         model.eval()
     return model
+
+def build_seg_model():
+    return PortraitSegmenter()
     
 def quantize_model(image_transformer):
     """ Convert model to quantized version """
@@ -100,6 +104,10 @@ def quantize_model(image_transformer):
     # Calibrate the model and collect statistics
     # convert to quantized version
     torch.quantization.convert(image_transformer, inplace=True)
+    
+def convert_mask(mask, thresh=0.5):
+    mask[mask>=thresh] = 1
+    mask[mask<thresh] = 0
 
 def stylize_video(): #save_vid=False:
 
@@ -111,13 +119,13 @@ def stylize_video(): #save_vid=False:
     ##reading from the webcam
     cap = cv2.VideoCapture(0)
 
-    times = [0, 0, 0]
+    times = [0, 0, 0, 0, 0]
     count = 0
     
     # fps text info
     font = cv2.FONT_HERSHEY_TRIPLEX
-    org = (220, 230) 
-    fontScale = 0.5
+    org = (440, 460) 
+    fontScale = 1
     color = (0, 0.5, 0.8) 
     
     isHalf = False
@@ -155,6 +163,11 @@ def stylize_video(): #save_vid=False:
     model = build_model(model_base)
     model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
     model.eval()
+    model.fuse()
+    
+    will_segment = False
+    segment_invert = False
+    #segmenter = build_seg_model()
     
     timelist = []
     
@@ -167,6 +180,8 @@ def stylize_video(): #save_vid=False:
         count += 1
 
         t1 = time.time()
+        bgrimg_full = cv2.resize(bgrimg, (640, 480), interpolation=cv2.INTER_AREA)
+        bgrimg_full = flip(bgrimg_full, axis=1)
         bgrimg = cv2.resize(bgrimg, (320, 240), interpolation=cv2.INTER_AREA)
         bgrimg = flip(bgrimg, axis=1)
         img = cv2.cvtColor(bgrimg, cv2.COLOR_BGR2RGB).astype(np.float)
@@ -191,6 +206,43 @@ def stylize_video(): #save_vid=False:
         sty = clip(sty,0,1)
         stybgr = cv2.cvtColor(sty, cv2.COLOR_RGB2BGR)
         
+        stybgr = cv2.resize(stybgr,(640,480),interpolation=cv2.INTER_LINEAR)
+        
+        t4 = time.time()
+        t5 = time.time()
+        if will_segment:
+            seg_input = cv2.resize(img, (64, 48), interpolation=cv2.INTER_AREA)
+            mask, edge = seg_input(torch.tensor(img).permute(2,0,1).unsqueeze(0).to(dtype))
+            convert_mask(mask)
+            t5 = time.time()
+            
+            # Open and the mask image
+            mask1 = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
+            mask1 = cv2.morphologyEx(mask1, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+            
+            mask1 = cv2.resize(mask1, (640, 480), interpolation=cv2.INTER_NEAREST)
+            convert_mask(mask1)
+            
+            # Create an inverted mask
+            mask2 = cv2.bitwise_not(mask1)
+            
+            if segment_invert:
+                # Segment the portrait out of the frame using bitwise and with the inverted mask
+                res1 = cv2.bitwise_and(stybgr, stybgr, mask=mask1)
+            
+                # Create image showing static background frame pixels only for the masked region
+                res2 = cv2.bitwise_and(bgrimg_full, bgrimg_full, mask=mask2)
+            else:
+                # Segment the portrait out of the frame using bitwise and with the inverted mask
+                res1 = cv2.bitwise_and(stybgr, stybgr, mask=mask2)
+            
+                # Create image showing static background frame pixels only for the masked region
+                res2 = cv2.bitwise_and(bgrimg_full, bgrimg_full, mask=mask1)
+            
+            # Generating the final output and writing
+            stybgr = cv2.addWeighted(res1, 1, res2, 1, 0)
+            
+        
         nf = len(timelist)
         if nf > 3:
             text = "fps: {:0.3g}".format((nf-1)/(timelist[-1]-timelist[0]))
@@ -198,12 +250,13 @@ def stylize_video(): #save_vid=False:
             if nf > 10:
                 timelist = timelist[1:]
         
-        cv2.imshow("video", cv2.resize(stybgr,(640,480), 
-                                       interpolation=cv2.INTER_LINEAR))
+        cv2.imshow("video", stybgr)
         
         times[0] += t2 - t1
         times[1] += t3 - t2
-        times[2] += time.time() - t3
+        times[2] += t4 - t3
+        times[3] += t5 - t4
+        times[4] += time.time() - t5
 
         keypress = cv2.waitKey(1)
         if keypress == ord('q'):
@@ -263,8 +316,8 @@ def stylize_video(): #save_vid=False:
             print("Loading: " + stored_file)
             model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
             model.eval() 
-    print("fps = {} - prep {}, eval {}, post {}".format(
-        count / (time.time() - t0), times[0], times[1], times[2]))
+    print("fps = {} - prep {}, eval {}, post {}, seg {}, postseg {}".format(
+        count / (time.time()-t0),times[0],times[1],times[2],times[3],times[4]))
     cap.release()
     cv2.destroyAllWindows()
 

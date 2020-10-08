@@ -25,147 +25,159 @@ class PortraitSegmenter(torch.nn.Module):
         super().__init__()
         self.useJPU = False #use_JPU
         self.fused = False
+        
+        assert num_levels >= 3 and num_levels <= 6
         assert len(filters) == num_levels
         assert len(down_depth) == num_levels
         assert len(up_depth) == num_levels-1
         
+        
         self.num_levels = num_levels
         
-        self.encoder = [Sequential(Conv(3,filters[0],DWS=False,stride=2))]
-        if upkern==3:
-            self.upconv = [UpConvUS(filters[0],endchannels[0],upsample=2,DWS=True)]
-        else:
-            self.upconv = [UpConv(filters[0],endchannels[0],upsample=2,DWS=True)]
-        self.decoder = [Sequential(InvertedResidual(2*filters[0],filters[0],
-                                                    expansion))]
-        
-        # do level zero first
+        # drop to 1/2
+        self.encoder0 = Sequential(Conv(3,filters[0],DWS=False,stride=2))
         for j in range(down_depth[0]):
             name = "DownIR_{}_{}".format(0,j)
-            self.encoder[0].add_module(name,InvertedResidual(filters[0],
-                                                             filters[0],
-                                                             expansion))
+            self.encoder0.add_module(name,InvertedResidual(filters[0],
+                                                           filters[0],
+                                                           expansion))
+        self.decoder0 = Sequential(InvertedResidual(2*filters[0],filters[0],
+                                                    expansion))
         for j in range(up_depth[0]):
             name = "UpIR_{}_{}".format(0,j)
-            self.decoder[0].add_module(name,InvertedResidual(filters[0],
-                                                             filters[0],
-                                                             expansion))
-        # start at depth 1
-        for i in range(1,num_levels):
-            # build upconv layer
-            if upkern==3:
-                self.upconv.append(UpConvUS(filters[i],filters[i-1],
-                                            upsample=2,DWS=True))
-            else:
-                self.upconv.append(UpConv(filters[i],endchannels[i-1],
-                                          upsample=2,DWS=True))
-                
-            # build encoder layer
-            self.encoder.append(Sequential(InvertedResidual(filters[i-1],
-                                                            filters[i],
-                                                            expansion,
-                                                            stride=2)))
-            for j in range(down_depth[i]):
-                name = "DownIR_{}_{}".format(i,j)
-                self.encoder[i].add_module(name,InvertedResidual(filters[i],
-                                                                 filters[i],
-                                                                 expansion))
-            if i == num_levels - 1:
-                # no decoder layer here 
-                self.decoder.append(torch.nn.Identity())
-            else:
-                # build decoder layer
-                self.decoder.append(Sequential(InvertedResidual(2*filters[i],
-                                                                filters[i],
-                                                                expansion)))
-                for j in range(up_depth[i]):
-                    name = "UpIR_{}_{}".format(i,j)
-                    self.decoder[i].add_module(name,InvertedResidual(filters[i],
-                                                                     filters[i],
-                                                                     expansion))
-        """
-        # drop to 1/2
-        self.level0 = Sequential(
-            Conv(3,filters[0],DWS=False,stride=2),
-            InvertedResidual(filters[0],filters[0],expansion)
-            )
+            self.decoder0.add_module(name,InvertedResidual(filters[0],
+                                                           filters[0],
+                                                           expansion))
+        if upkern==3:
+            self.upconv0 = UpConvUS(filters[0],endchannels[0],upsample=2,DWS=True)
+        else:
+            self.upconv0 = UpConv(filters[0],endchannels[0],upsample=2,DWS=True)
+            
         # drop to 1/4
-        self.level1 = Sequential(
-            InvertedResidual(filters[0],filters[1],expansion,stride=2),
-            InvertedResidual(filters[1],filters[1],expansion),
-            InvertedResidual(filters[1],filters[1],expansion)
-            )
+        i = 1
+        self.encoder1 = Sequential(InvertedResidual(filters[i-1],
+                                                    filters[i],
+                                                    expansion,
+                                                    stride=2))
+        for j in range(down_depth[i]):
+            name = "DownIR_{}_{}".format(i,j)
+            self.encoder1.add_module(name,InvertedResidual(filters[i],
+                                                           filters[i],
+                                                           expansion))
+        self.decoder1 = Sequential(InvertedResidual(2*filters[i],
+                                                    filters[i],
+                                                    expansion))
+        for j in range(up_depth[i]):
+            name = "UpIR_{}_{}".format(i,j)
+            self.decoder1.add_module(name,InvertedResidual(filters[i],
+                                                           filters[i],
+                                                           expansion))
+        if upkern==3:
+            self.upconv1 = UpConvUS(filters[i],filters[i-1],upsample=2,DWS=True)
+        else:
+            self.upconv1 = UpConv(filters[i],filters[i-1],upsample=2,DWS=True)
         
         # drop to 1/8
-        self.level2 = Sequential(
-            InvertedResidual(filters[1],filters[2],expansion,stride=2),
-            InvertedResidual(filters[2],filters[2],expansion),
-            InvertedResidual(filters[2],filters[2],expansion)
-            )
-        
-        # drop to 1/16
-        self.level3 = Sequential(
-            InvertedResidual(filters[2],filters[3],expansion,stride=2),
-            InvertedResidual(filters[3],filters[3],expansion),
-            InvertedResidual(filters[3],filters[3],expansion)
-            )
-        
-        if use_JPU: # note:  This is a stub
-            self.dilation1 = DWSConv(dilate_channels,dilate_channels,3, 
-                                     dilation=1,bias=False,pad=True)
-            self.dilation1 = DWSConv(dilate_channels,dilate_channels,3, 
-                                     dilation=2,bias=False,pad=True)
-            self.dilation1 = DWSConv(dilate_channels,dilate_channels,3, 
-                                     dilation=4,bias=False,pad=True)
-            self.dilation1 = DWSConv(dilate_channels,dilate_channels,3, 
-                                     dilation=8,bias=False,pad=True)
+        i = 2
+        self.encoder2 = Sequential(InvertedResidual(filters[i-1],
+                                                    filters[i],
+                                                    expansion,
+                                                    stride=2))
+        for j in range(down_depth[i]):
+            name = "DownIR_{}_{}".format(i,j)
+            self.encoder2.add_module(name,InvertedResidual(filters[i],
+                                                           filters[i],
+                                                           expansion))
+        if upkern==3:
+            self.upconv2 = UpConvUS(filters[i],filters[i-1],upsample=2,DWS=True)
         else:
-            if upkern==3:
-                self.deconv3 = UpConvUS(filters[3],filters[2],upsample=2,DWS=True)
-                self.deconv2 = UpConvUS(filters[2],filters[1],upsample=2,DWS=True)
-                self.deconv1 = UpConvUS(filters[1],filters[0],upsample=2,DWS=True)
-                self.deconv0 = UpConvUS(filters[0],endchannels[0],upsample=2,DWS=True)
-            else:
-                
-                self.deconv3 = UpConv(filters[3],filters[2],upsample=2,DWS=True)
-                self.deconv2 = UpConv(filters[2],filters[1],upsample=2,DWS=True)
-                self.deconv1 = UpConv(filters[1],filters[0],upsample=2,DWS=True)
-                self.deconv0 = UpConv(filters[0],endchannels[0],upsample=2,DWS=True)
+            self.upconv2 = UpConv(filters[i],filters[i-1],upsample=2,DWS=True)
         
-        self.decoder2 = Sequential(
-            InvertedResidual(2*filters[2],filters[2],expansion),
-            InvertedResidual(filters[2],filters[2],expansion)
-            )
-        self.decoder1 = Sequential(
-            InvertedResidual(2*filters[1],filters[1],expansion),
-            InvertedResidual(filters[1],filters[1],expansion)
-            )
-        self.decoder0 = Sequential(
-            InvertedResidual(2*filters[0],filters[0],expansion),
-            InvertedResidual(filters[0],filters[0],expansion)
-            )
-        """
+        if num_levels > 3:
+            # note: decoders only need one fewer level
+            self.decoder2 = Sequential(InvertedResidual(2*filters[i],
+                                                    filters[i],
+                                                    expansion))
+            for j in range(up_depth[i]):
+                name = "UpIR_{}_{}".format(i,j)
+                self.decoder2.add_module(name,InvertedResidual(filters[i],
+                                                               filters[i],
+                                                               expansion))
+            
+            # drop to 1/16
+            i = 3
+            self.encoder3 = Sequential(InvertedResidual(filters[i-1],
+                                                        filters[i],
+                                                        expansion,
+                                                        stride=2))
+            for j in range(down_depth[i]):
+                name = "DownIR_{}_{}".format(i,j)
+                self.encoder3.add_module(name,InvertedResidual(filters[i],
+                                                               filters[i],
+                                                               expansion))
+            if upkern==3:
+                self.upconv3 = UpConvUS(filters[i],filters[i-1],upsample=2,DWS=True)
+            else:
+                self.upconv3 = UpConv(filters[i],filters[i-1],upsample=2,DWS=True)
+                
+        if num_levels > 4:
+            self.decoder3 = Sequential(InvertedResidual(2*filters[i],
+                                                        filters[i],
+                                                        expansion))
+            for j in range(up_depth[i]):
+                name = "UpIR_{}_{}".format(i,j)
+                self.decoder3.add_module(name,InvertedResidual(filters[i],
+                                                               filters[i],
+                                                               expansion))
+            
+            # drop to 1/32
+            i = 4
+            self.encoder4 = Sequential(InvertedResidual(filters[i-1],
+                                                        filters[i],
+                                                        expansion,
+                                                        stride=2))
+            for j in range(down_depth[i]):
+                name = "DownIR_{}_{}".format(i,j)
+                self.encoder4.add_module(name,InvertedResidual(filters[i],
+                                                               filters[i],
+                                                               expansion))
+            if upkern==3:
+                self.upconv4 = UpConvUS(filters[i],filters[i-1],upsample=2,DWS=True)
+            else:
+                self.upconv4 = UpConv(filters[i],filters[i-1],upsample=2,DWS=True)
+        
+        if num_levels > 5:
+            self.decoder4 = Sequential(InvertedResidual(2*filters[i],
+                                                        filters[i],
+                                                        expansion))
+            for j in range(up_depth[i]):
+                name = "UpIR_{}_{}".format(i,j)
+                self.decoder4.add_module(name,InvertedResidual(filters[i],
+                                                               filters[i],
+                                                               expansion))
+                
+            # drop to 1/64
+            i = 5
+            self.encoder5 = Sequential(InvertedResidual(filters[i-1],
+                                                        filters[i],
+                                                        expansion,
+                                                        stride=2))
+            for j in range(down_depth[i]):
+                name = "DownIR_{}_{}".format(i,j)
+                self.encoder5.add_module(name,InvertedResidual(filters[i],
+                                                               filters[i],
+                                                               expansion))
+            if upkern==3:
+                self.upconv5 = UpConvUS(filters[i],filters[i-1],upsample=2,DWS=True)
+            else:
+                self.upconv5 = UpConv(filters[i],filters[i-1],upsample=2,DWS=True)
+        
             
         self.pred = Conv(endchannels[0],endchannels[1],DWS=False,bias=bias_ll)
         self.edge = Conv(endchannels[0],endchannels[1],DWS=False,bias=bias_ll)
         
         self.quant = QuantStub()
-        self.dequant = DeQuantStub()
-        
-    def cuda(self):
-        super().cuda()
-        for i in range(self.num_levels):
-            self.encoder[i].cuda()
-            self.upconv[i].cuda()
-            self.decoder[i].cuda()
-    
-    def cpu(self):
-        super().cpu()
-        for i in range(self.num_levels):
-            self.encoder[i].cpu()
-            self.upconv[i].cpu()
-            self.decoder[i].cpu()
-    
+        self.dequant = DeQuantStub()    
 
     def fuse(self, inplace=True):
         if self.fused:
@@ -200,33 +212,34 @@ class PortraitSegmenter(torch.nn.Module):
         num_l = self.num_levels
         
         xq = self.quant(ins)
+
+        x0 = self.encoder0(xq)
+        x1 = self.encoder1(x0)
+        x2 = self.encoder2(x1)
+        if num_l > 3:
+            x3 = self.encoder3(x2)
+            if num_l > 4:
+                x4 = self.encoder4(x3)
+                if num_l > 5:
+                    x5 = self.encoder5(x4)
+                    
+                    up4 = self.upconv5(x5)
+                    inp4 = self.decoder4(torch.cat((x4,up4),dim=1))
+                else:
+                    inp4 = x4
+                up3 = self.upconv4(inp4)
+                inp3 = self.decoder3(torch.cat((x3,up3),dim=1))
+            else:
+                inp3 = x3
+            up2 = self.upconv3(inp3)
+            inp2 = self.decoder2(torch.cat((x2,up2),dim=1))
+        else:
+            inp2 = x2
+        up1 = self.upconv2(inp2)
+        inp1 = self.decoder1(torch.cat((x1,up1),dim=1))
         
-        down_outs = [ self.encoder[0](xq) ]
-        
-        for i in range(1, num_l):
-            down_outs.append(self.encoder[i](down_outs[-1]))
-        
-        up_outs = [None] * (num_l - 1)        
-        up_outs[num_l - 2] = self.upconv[num_l - 1](down_outs[num_l - 1])
-        for i in range(2, num_l):
-            k = num_l - i
-            temp_out = torch.cat((down_outs[k],up_outs[k]),dim=1)
-            up_outs[k - 1] = self.upconv[k](self.decoder[k](temp_out))
-        
-        temp_out = torch.cat((down_outs[0],up_outs[0]),dim=1)
-        penult = self.upconv[0](self.decoder[0](temp_out))
-        
-        """
-        x0 = self.level0(xq)
-        x1 = self.level1(x0)
-        x2 = self.level2(x1)
-        x3 = self.level3(x2)
-        
-        up2 = self.deconv3(x3)
-        up1 = self.deconv2(self.decoder2(torch.cat((x2,up2),dim=1)))
-        up0 = self.deconv1(self.decoder1(torch.cat((x1,up1),dim=1)))
-        penult = self.deconv0(self.decoder0(torch.cat((x0,up0),dim=1)))
-        """
+        up0 = self.upconv1(inp1)
+        penult = self.upconv0(self.decoder0(torch.cat((x0,up0),dim=1)))
     
         mask_pred = self.dequant(self.pred(penult))
         edge = self.dequant(self.edge(penult))

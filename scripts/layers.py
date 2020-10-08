@@ -85,7 +85,7 @@ class DWSConv(torch.nn.Module):
         self.leak = leak
         if leak == 0:
             self.relu = torch.nn.ReLU(inplace=True)
-        if leak == -1:
+        elif leak == -1:
             self.relu = torch.nn.Identity()
         else:
             self.relu = torch.nn.LeakyReLU(leak)
@@ -147,6 +147,8 @@ class ConvBNReLU(torch.nn.Module):
         self.leak = leak
         if leak == 0:
             self.relu = torch.nn.ReLU(inplace=True)
+        elif leak == -1:
+            self.relu = torch.nn.Identity()
         else:
             self.relu = torch.nn.LeakyReLU(leak)
 
@@ -288,7 +290,7 @@ class SE(torch.nn.Module):
 class ResLayer(torch.nn.Module):
     """ Basic residual layer to import into ImageTransformer
     """
-    def __init__(self,channels,kernel_size=3,leak=0.05,norm_type='batch',
+    def __init__(self,channels,kernel_size=3,leak=0,norm_type='batch',
                  DWS=False, dilation=1, groups=1):
         super().__init__()
         self.conv1 = Conv(channels,channels,kernel_size,DWS=DWS,groups=groups,
@@ -313,7 +315,7 @@ class Layer131(torch.nn.Module):
     """ 1-3-1 residual layer to import into PortraitSegmenter
         key component of mobilenet v2
     """
-    def __init__(self,ins,outs,mids,kernel_size=3,leak=0.05,norm_type='batch',
+    def __init__(self,ins,outs,mids,kernel_size=3,leak=0,norm_type='batch',
                  groups=1,dilation=1,stride=1):
         super().__init__()
         if norm_type == 'batch':
@@ -351,7 +353,7 @@ class Layer131(torch.nn.Module):
 class ShuffleLayer(torch.nn.Module):
     """ Basic shuffle layer with 1-3-1 bottleneck layer """
     def __init__(self,channels,mids,kernel_size=3, 
-                 leak=0.05,norm_type='batch',groups=1):
+                 leak=0,norm_type='batch',groups=1):
         super().__init__()
         self.main_branch = Layer131(channels,channels,channels // 2,
                                     kernel_size,leak=leak,
@@ -365,7 +367,7 @@ class ShuffleLayer(torch.nn.Module):
 class ResShuffleLayer(torch.nn.Module):
     """ Basic residual layer to import into ImageTransformer
     """
-    def __init__(self,channels,kernel_size=3,leak=0.05,norm_type='batch',
+    def __init__(self,channels,kernel_size=3,leak=0,norm_type='batch',
                  DWS=False, groups=1,dilation=1):
         super().__init__()
         if norm_type == 'batch':

@@ -157,8 +157,9 @@ class VariationalLoss(nn.Module):
 
 
 """  The following code is for the portrait segmenter:
-        - Dice Loss: https://github.com/JunMa11/SegLoss/blob/master/losses_pytorch/dice_loss.py
-        - Focal Loss: 
+        - SoftDiceLoss: https://github.com/JunMa11/SegLoss/blob/master/losses_pytorch/dice_loss.py
+        - FocalLoss: https://github.com/CoinCheung/pytorch-loss/
+        - JSLoss: new
 """
 
 def sum_tensor(inp, axes, keepdim=False):
@@ -264,41 +265,90 @@ class SoftDiceLoss(nn.Module):
     
     
 """ focal loss """
+class FocalSigmoidLossFunc(torch.autograd.Function):
+    '''
+    compute backward directly for better numeric stability
+    '''
+    @staticmethod
+    def forward(ctx, logits, label, alpha, gamma):
+        logits = logits.float()
+        coeff = torch.empty_like(logits).fill_(1 - alpha)
+        coeff[label == 1] = alpha
+
+        probs = torch.sigmoid(logits)
+        log_probs = torch.where(logits >= 0,
+                F.softplus(logits, -1, 50),
+                logits - F.softplus(logits, 1, 50))
+        log_1_probs = torch.where(logits >= 0,
+                -logits + F.softplus(logits, -1, 50),
+                -F.softplus(logits, 1, 50))
+        probs_gamma = probs ** gamma
+        probs_1_gamma = (1. - probs) ** gamma
+
+        ctx.coeff = coeff
+        ctx.probs = probs
+        ctx.log_probs = log_probs
+        ctx.log_1_probs = log_1_probs
+        ctx.probs_gamma = probs_gamma
+        ctx.probs_1_gamma = probs_1_gamma
+        ctx.label = label
+        ctx.gamma = gamma
+
+        term1 = probs_1_gamma * log_probs
+        term2 = probs_gamma * log_1_probs
+        loss = torch.where(label == 1, term1, term2).mul_(coeff).neg_()
+        return loss
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        '''
+        compute gradient of focal loss
+        '''
+        coeff = ctx.coeff
+        probs = ctx.probs
+        log_probs = ctx.log_probs
+        log_1_probs = ctx.log_1_probs
+        probs_gamma = ctx.probs_gamma
+        probs_1_gamma = ctx.probs_1_gamma
+        label = ctx.label
+        gamma = ctx.gamma
+
+        term1 = (1. - probs - gamma * probs * log_probs).mul_(probs_1_gamma).neg_()
+        term2 = (probs - gamma * (1. - probs) * log_1_probs).mul_(probs_gamma)
+
+        grads = torch.where(label == 1, term1, term2).mul_(coeff).mul_(grad_output)
+        return grads, None, None, None
+
+
 class FocalLoss(nn.Module):
-    def __init__(self, gamma=0, alpha=None, size_average=True):
-        super(FocalLoss, self).__init__()
-        self.gamma = gamma
+    '''
+    This use better formula to compute the gradient, which has better numeric stability
+    '''
+    def __init__(self,
+                 alpha=1,
+                 gamma=2,
+                 reduction='mean'):
+        super().__init__()
         self.alpha = alpha
-        if isinstance(alpha,(float,int)): self.alpha = torch.Tensor([alpha,1-alpha])
-        if isinstance(alpha,list): self.alpha = torch.Tensor(alpha)
-        self.size_average = size_average
+        self.gamma = gamma
+        self.reduction = reduction
 
+    def forward(self, logits, label):
+        loss = FocalSigmoidLossFunc.apply(logits, label, self.alpha, self.gamma)
+        if self.reduction == 'mean':
+            loss = loss.mean()
+        if self.reduction == 'sum':
+            loss = loss.sum()
+        return loss
+
+
+class JSloss(nn.Module):
+    """  Compute the Jensen-Shannon loss using the torch native kl_div"""
+    def __init__(self, reduction='batchmean'):
+        super().__init__()
+        self.red = reduction
+        
     def forward(self, input, target):
-        if input.dim()>2:
-            input = input.view(input.size(0),input.size(1),-1) # N,C,H,W => N,C,H*W
-            input = input.transpose(1,2) # N,C,H*W => N,H*W,C
-            input = input.contiguous().view(-1,input.size(2)) # N,H*W,C => N*H*W,C
-        target = target.view(-1,1)
-
-        """logpt = F.log_softmax(input)
-        logpt = logpt.gather(1,target)
-        logpt = logpt.view(-1)
-        pt = Variable(logpt.data.exp())"""
-        
-        logpt =  F.log_softmax(input, dim=0)
-        logpt = torch.gather(logpt,0,target.to(torch.int64))
-        logpt = logpt.view(-1)
-        pt = torch.autograd.Variable(logpt.data.exp())
-
-        if self.alpha is not None:
-            if self.alpha.type()!=input.data.type():
-                self.alpha = self.alpha.type_as(input.data)
-            at = self.alpha.gather(0,target.data.view(-1))
-            logpt = logpt * Variable(at)
-
-        loss = -1 * (1-pt)**self.gamma * logpt
-        
-        if self.size_average: 
-            return loss.mean()
-        else: 
-            return loss.sum()
+         net = (input + target)/2.
+         return 0.5 * (F.kl_div(input, net, reduction=self.red) + 
+                       F.kl_div(target, net, reduction=self.red))

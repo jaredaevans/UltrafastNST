@@ -9,7 +9,7 @@ import random
 import matplotlib.pyplot as plt
 
 from vgg19 import build_vgg19, get_vgg19_content
-from losses import GetContentLoss, SoftDiceLoss, FocalLoss
+from losses import GetContentLoss, SoftDiceLoss, FocalLoss, JSloss
 
 
 def prepandclip(img):
@@ -292,22 +292,26 @@ class SegmentTrainer():
         else:
             self.segmenter.cpu()
         self.optimizer = torch.optim.Adam(self.segmenter.parameters(),
-                                          lr=0.01,betas=(0.98,0.9999))
+                                          lr=0.01,betas=(0.9,0.999))
         self.diceloss = SoftDiceLoss()
-        # Note: FocalLoss may not be very useful 
         self.focalloss = FocalLoss(gamma=2)
         self.KLloss = torch.nn.KLDivLoss(reduction='batchmean')
+        self.JSloss = JSloss()
         self.CEloss = torch.nn.BCEWithLogitsLoss()
         
     def calcIOU(self, mask, mask_pred):
         """ use torch tensors with values of 0 or 1 """
-        sum1 = mask + mask_pred
+        mask_pred_x = mask_pred.clone().detach()
+        mask_pred_x[mask_pred_x>0.5] = 1
+        mask_pred_x[mask_pred_x<=0.5] = 0
+        
+        sum1 = mask + mask_pred_x
         sum1[sum1>0] = 1
         sum1[sum1<=0] = 0
         x = torch.sum(sum1)
         if x == 0: # union = 0
             return 1.
-        sum2 = mask + mask_pred
+        sum2 = mask + mask_pred_x
         sum2[sum2<2] = 0
         sum2[sum2>=2] = 1
         y = torch.sum(sum2)
@@ -329,23 +333,56 @@ class SegmentTrainer():
         # forward + backward + optimize
         masks_pred, edge_pred = self.segmenter(imgs)
         
-        if self.useKL:
-            dice_score = self.KLloss(masks_pred,masks.unsqueeze(1)*1.)
-            edge_score = self.KLloss(edge_pred,edge.unsqueeze(1)*1.)
+        # mask losses
+        if self.mask_loss == "KL":
+            mask_score = self.KLloss(masks_pred,masks.unsqueeze(1)*1.)
+        elif self.mask_loss == "softKL":
+            mask_score = self.KLloss(masks_pred,masks.unsqueeze(1)*0.9+0.05)
+        elif self.mask_loss == "JS":
+            mask_score = self.JSloss(masks_pred,masks.unsqueeze(1)*1.)
+        elif self.mask_loss == "softJS":
+            mask_score = self.JSloss(masks_pred,masks.unsqueeze(1)*0.9+0.05)
+        elif self.mask_loss == "CE":
+            mask_score = self.CEloss(masks_pred,masks.unsqueeze(1)*1.)
+        elif self.mask_loss == "dice":
+            mask_score = self.diceloss(masks_pred,masks.unsqueeze(1))
+        elif self.mask_loss == "focal":
+            mask_score = self.focalloss(masks_pred,masks.unsqueeze(1))
         else:
-            dice_score = self.CEloss(masks_pred,masks.unsqueeze(1)*1.)
-            edge_score = self.CEloss(edge_pred,edge.unsqueeze(1)*1.)
-            
-            #dice_score = self.diceloss(masks_pred,masks.unsqueeze(1))
-            #edge_score = self.focalloss(edge_pred,edge)
-        dice_score *= self.dice_weight
+            if not self.complained_mask:
+                print("Invalid mask loss selected; defaulting to KL")
+                self.complained_mask = True
+            mask_score = self.KLloss(masks_pred,masks.unsqueeze(1)*1.)
         
-        loss = dice_score + edge_score
+        # Edge Losses
+        if self.edge_loss == "KL":
+            edge_score = self.KLloss(edge_pred,edge.unsqueeze(1)*1.)
+        elif self.edge_loss == "softKL":
+            edge_score = self.KLloss(edge_pred,edge.unsqueeze(1)*0.9+0.05)
+        elif self.edge_loss == "JS":
+            edge_score = self.JSloss(edge_pred,edge.unsqueeze(1)*1.)
+        elif self.edge_loss == "softJS":
+            edge_score = self.JSloss(edge_pred,edge.unsqueeze(1)*0.9+0.05)
+        elif self.edge_loss == "CE":
+            edge_score = self.CEloss(edge_pred,edge.unsqueeze(1)*1.)
+        elif self.edge_loss == "dice":
+            edge_score = self.diceloss(edge_pred,edge.unsqueeze(1))
+        elif self.edge_loss == "focal":
+            edge_score = self.focalloss(edge_pred,edge.unsqueeze(1))
+        else:
+            if not self.complained_edge and self.edge_loss is not None:
+                print("Invalid edge loss selected; defaulting to None")
+                self.complained_edge = True
+            edge_score = torch.tensor(0)
+
+        mask_score *= self.mask_weight
+        
+        loss = mask_score + edge_score
         
         # IOU is not used for loss, but is for tracking
         IoU = self.calcIOU(masks, masks_pred)
         
-        losses[0] += dice_score.item()
+        losses[0] += mask_score.item()
         losses[1] += edge_score.item()
         losses[2] += IoU
         
@@ -356,16 +393,20 @@ class SegmentTrainer():
         return loss
     
     def train(self,data,val=None,epochs=10,lr=0.01,batch_size=16,num_workers=1,
-              epoch_show=20,best_path="best.pth",es_patience=5,dice_weight=10,
-              test_image=None,test_im_show=5, useKL=False):
+              epoch_show=20,best_path="best.pth",es_patience=5,mask_weight=10,
+              test_image=None,test_im_show=5,
+              mask_loss='JS',edge_loss='JS'):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.cpu = torch.device("cpu")
-        self.dice_weight = dice_weight
+        self.mask_weight = mask_weight
         #set the learning rate
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
             
-        self.useKL = useKL
+        self.mask_loss = mask_loss
+        self.edge_loss = edge_loss
+        self.complained_mask = False
+        self.complained_edge = False
             
         trainloader = torch.utils.data.DataLoader(data, batch_size=batch_size,
                                           shuffle=True, num_workers=num_workers)
@@ -394,7 +435,7 @@ class SegmentTrainer():
                 self.optimizer.step()
                 k += 1
             num_ev = (k+1)*batch_size
-            print("  Training on {} images;  IoU = {}".format(num_ev,running_losses[2]/(k+1)))
+            print("  Training on {} images;  IoU = {}; Mask loss = {}; Edge loss = {}".format(num_ev,running_losses[2]/(k+1),running_losses[0]/(k+1),running_losses[1]/(k+1)))
             if val is not None:
                 val_losses = [0,0,0,0,0,0]
                 with torch.no_grad():
@@ -406,7 +447,7 @@ class SegmentTrainer():
                         loss = self.step(imgs, masks, edges, val_losses)
                         vk = i
                     num_ev = (vk+1)*batch_size
-                    print("  Validation on {} images:  IoU = {}".format(num_ev,val_losses[2]/(vk+1)))
+                    print("  Validation on {} images:  IoU = {}; Mask loss = {}; Edge loss = {}".format(num_ev,val_losses[2]/(vk+1),val_losses[0]/(vk+1),val_losses[1]/(vk+1)))
                     #self.update_history(history,epoch,running_losses,k,
                     #                    val_losses, vk)
                     vl_cur = sum(val_losses)/vk             
