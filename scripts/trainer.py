@@ -295,15 +295,16 @@ class SegmentTrainer():
                                           lr=0.01,betas=(0.9,0.999))
         self.diceloss = SoftDiceLoss()
         self.focalloss = FocalLoss(gamma=2)
-        self.KLloss = torch.nn.KLDivLoss(reduction='batchmean')
+        self.KLloss = FocalLoss(gamma=1)
         self.JSloss = JSloss()
         self.CEloss = torch.nn.BCEWithLogitsLoss()
         
     def calcIOU(self, mask, mask_pred):
         """ use torch tensors with values of 0 or 1 """
         mask_pred_x = mask_pred.clone().detach()
-        mask_pred_x[mask_pred_x>0.5] = 1
-        mask_pred_x[mask_pred_x<=0.5] = 0
+        thresh = 1.64872
+        mask_pred_x[mask_pred_x<=thresh] = 0
+        mask_pred_x[mask_pred_x>thresh] = 1
         
         sum1 = mask + mask_pred_x
         sum1[sum1>0] = 1
@@ -332,6 +333,9 @@ class SegmentTrainer():
 
         # forward + backward + optimize
         masks_pred, edge_pred = self.segmenter(imgs)
+        
+        # IOU is not used for loss, but is for tracking
+        IoU = self.calcIOU(masks.unsqueeze(1), masks_pred)
         
         # mask losses
         if self.mask_loss == "KL":
@@ -378,9 +382,6 @@ class SegmentTrainer():
         mask_score *= self.mask_weight
         
         loss = mask_score + edge_score
-        
-        # IOU is not used for loss, but is for tracking
-        IoU = self.calcIOU(masks, masks_pred)
         
         losses[0] += mask_score.item()
         losses[1] += edge_score.item()

@@ -61,9 +61,10 @@ class PortraitSegDatasetAug(torch.utils.data.Dataset):
                        scale_range=(1-self.zoom, 1+self.zoom), 
                        offset=self.input_height/4)
             
+            border_col = (np.random.randint(0,255),np.random.randint(0,255),np.random.randint(0,255))
             img_aug = cv2.warpAffine(np.uint8(img), H, (self.input_width, self.input_height), 
                                      flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, 
-                                     borderValue=(self.padding_color, self.padding_color, self.padding_color)) 
+                                     borderValue=border_col) 
             mask_aug = cv2.warpAffine(np.uint8(mask), H, (self.input_width, self.input_height), 
                                       flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT)
             img_aug_ori, mask_aug_ori, aug_flag = data_aug_flip(img_aug, mask_aug)

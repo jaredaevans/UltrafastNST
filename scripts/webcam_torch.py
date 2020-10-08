@@ -112,10 +112,8 @@ def quantize_model(image_transformer):
     # convert to quantized version
     torch.quantization.convert(image_transformer, inplace=True)
     
-def convert_mask(mask, thresh=0.5):
-    #mask[mask>=thresh] = 1
-    #mask[mask<thresh] = 0
-    new = cv2.inRange(mask, thresh, 2)
+def convert_mask(mask, thresh=2.0):
+    new = cv2.inRange(mask, thresh, 10000)
     return new
 
 def stylize_video(): #save_vid=False:
@@ -176,6 +174,7 @@ def stylize_video(): #save_vid=False:
     
     will_segment = False
     segment_invert = False
+    maskThresh = 2.0
     segmenter = build_seg_model()
     
     timelist = []
@@ -223,8 +222,8 @@ def stylize_video(): #save_vid=False:
             seg_input = cv2.resize(img, (64, 48), interpolation=cv2.INTER_AREA)
             mask, edge = segmenter(torch.tensor(seg_input).permute(2,0,1).unsqueeze(0).to(dtype))
             t5 = time.time()
-            mask=edge
-            mask1 = convert_mask(mask[0].permute(1,2,0).numpy())
+            #mask=edge
+            mask1 = convert_mask(mask[0].permute(1,2,0).numpy(),maskThresh)
             # Open and the mask image
             #mask1 = cv2.morphologyEx(mask1, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
             #mask1 = cv2.morphologyEx(mask1, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
@@ -329,7 +328,11 @@ def stylize_video(): #save_vid=False:
         elif keypress == ord('e'):
             will_segment = not will_segment
         elif keypress == ord('r'):
-            segment_invert = not segment_invert  
+            segment_invert = not segment_invert 
+        elif keypress == ord('x'):
+            maskThresh *= 0.9
+        elif keypress == ord('c'):
+            maskThresh *= 1.1
     print("fps = {} - prep {}, eval {}, post {}, seg {}, postseg {}".format(
         count / (time.time()-t0),times[0],times[1],times[2],times[3],times[4]))
     cap.release()

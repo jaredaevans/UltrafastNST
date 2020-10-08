@@ -135,13 +135,13 @@ def data_aug_blur(image):
         return image
     
     select = random.random()
-    if select < 0.3:
+    if select < 0.25:
         kernalsize = random.choice([3,5])
         image = cv2.GaussianBlur(image, (kernalsize,kernalsize),0)
-    elif select < 0.6:
+    elif select < 0.5:
         kernalsize = random.choice([3,5])
         image = cv2.medianBlur(image, kernalsize)
-    else:
+    elif select < 0.75:
         kernalsize = random.choice([3,5])
         image = cv2.blur(image, (kernalsize,kernalsize))
     return image
