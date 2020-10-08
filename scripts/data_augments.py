@@ -41,7 +41,7 @@ def show_edge(mask_ori):
     diff[diff == 2] = 1
     return diff   
     '''
-    cv2.drawContours(myImg, contours, -1, 1, 4)
+    cv2.drawContours(myImg, contours, -1, 1, 2)
     return myImg
 
 # ===================== load mask =====================

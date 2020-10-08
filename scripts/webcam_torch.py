@@ -94,7 +94,14 @@ def build_model(idkey):
     return model
 
 def build_seg_model():
-    return PortraitSegmenter()
+    port_seg = PortraitSegmenter(down_depth=[1,2,2,2], up_depth=[1,1,1],
+                                 filters=[16,24,32,48])
+    stored_file = "../models/portraitfocal.pth"
+    port_seg.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
+    port_seg.eval()
+    port_seg.fuse()
+    port_seg.eval()
+    return port_seg
     
 def quantize_model(image_transformer):
     """ Convert model to quantized version """
@@ -106,8 +113,10 @@ def quantize_model(image_transformer):
     torch.quantization.convert(image_transformer, inplace=True)
     
 def convert_mask(mask, thresh=0.5):
-    mask[mask>=thresh] = 1
-    mask[mask<thresh] = 0
+    #mask[mask>=thresh] = 1
+    #mask[mask<thresh] = 0
+    new = cv2.inRange(mask, thresh, 2)
+    return new
 
 def stylize_video(): #save_vid=False:
 
@@ -167,7 +176,7 @@ def stylize_video(): #save_vid=False:
     
     will_segment = False
     segment_invert = False
-    #segmenter = build_seg_model()
+    segmenter = build_seg_model()
     
     timelist = []
     
@@ -182,8 +191,8 @@ def stylize_video(): #save_vid=False:
         t1 = time.time()
         bgrimg_full = cv2.resize(bgrimg, (640, 480), interpolation=cv2.INTER_AREA)
         bgrimg_full = flip(bgrimg_full, axis=1)
-        bgrimg = cv2.resize(bgrimg, (320, 240), interpolation=cv2.INTER_AREA)
-        bgrimg = flip(bgrimg, axis=1)
+        bgrimg = cv2.resize(bgrimg_full, (320, 240), interpolation=cv2.INTER_AREA)
+        #bgrimg = flip(bgrimg, axis=1)
         img = cv2.cvtColor(bgrimg, cv2.COLOR_BGR2RGB).astype(np.float)
         img /= 127.5  # 0 - 255 to 0.0 - 2.0
         img -= 1 # 0.0 - 2.0  to -1.0 to 1.0
@@ -212,31 +221,32 @@ def stylize_video(): #save_vid=False:
         t5 = time.time()
         if will_segment:
             seg_input = cv2.resize(img, (64, 48), interpolation=cv2.INTER_AREA)
-            mask, edge = seg_input(torch.tensor(img).permute(2,0,1).unsqueeze(0).to(dtype))
-            convert_mask(mask)
+            mask, edge = segmenter(torch.tensor(seg_input).permute(2,0,1).unsqueeze(0).to(dtype))
             t5 = time.time()
-            
+            mask=edge
+            mask1 = convert_mask(mask[0].permute(1,2,0).numpy())
             # Open and the mask image
-            mask1 = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
-            mask1 = cv2.morphologyEx(mask1, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+            #mask1 = cv2.morphologyEx(mask1, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
+            #mask1 = cv2.morphologyEx(mask1, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
             
-            mask1 = cv2.resize(mask1, (640, 480), interpolation=cv2.INTER_NEAREST)
-            convert_mask(mask1)
+            mask1 = cv2.resize(mask1, (640, 480), interpolation=cv2.INTER_LINEAR)
+            mask1 = convert_mask(mask1)
             
             # Create an inverted mask
             mask2 = cv2.bitwise_not(mask1)
             
+            stybgr = (stybgr*255).astype(np.uint8)
             if segment_invert:
-                # Segment the portrait out of the frame using bitwise and with the inverted mask
+                # Segment the stylized portrait
                 res1 = cv2.bitwise_and(stybgr, stybgr, mask=mask1)
             
-                # Create image showing static background frame pixels only for the masked region
+                # Segment the true image
                 res2 = cv2.bitwise_and(bgrimg_full, bgrimg_full, mask=mask2)
             else:
-                # Segment the portrait out of the frame using bitwise and with the inverted mask
+                # Segment the true portrait
                 res1 = cv2.bitwise_and(stybgr, stybgr, mask=mask2)
             
-                # Create image showing static background frame pixels only for the masked region
+                # Segment the sylized background
                 res2 = cv2.bitwise_and(bgrimg_full, bgrimg_full, mask=mask1)
             
             # Generating the final output and writing
@@ -262,8 +272,8 @@ def stylize_video(): #save_vid=False:
         if keypress == ord('q'):
             # q to quit
             break
-        elif keypress == ord('d') or keypress == ord('r'):
-            # r or d to load the next model
+        elif keypress == ord('d'):
+            # d to load the next model
             model_id += 1
             if model_id >= num_models:
                 model_id = 0
@@ -316,6 +326,10 @@ def stylize_video(): #save_vid=False:
             print("Loading: " + stored_file)
             model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
             model.eval() 
+        elif keypress == ord('e'):
+            will_segment = not will_segment
+        elif keypress == ord('r'):
+            segment_invert = not segment_invert  
     print("fps = {} - prep {}, eval {}, post {}, seg {}, postseg {}".format(
         count / (time.time()-t0),times[0],times[1],times[2],times[3],times[4]))
     cap.release()
