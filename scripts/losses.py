@@ -8,7 +8,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from numpy import unique
-from torch.autograd import Variable
 
 def gram_matrix(input):
     """ gram matrix for feature assignments """

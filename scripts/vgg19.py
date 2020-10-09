@@ -9,7 +9,7 @@ import torch.nn as nn
 import torchvision.models as models
 
 from losses import VariationalLoss, ContentTrack, StyleLoss, StyleTrack
-from losses import gram_matrix, ColorLoss
+from losses import gram_matrix
 
 class Normalization(nn.Module):
     """ Layer to normalize input image so we can easily put it in the

@@ -3,7 +3,6 @@
 """
 Imported from https://github.com/dong-x16/PortraitNet
 """
-import os
 import cv2
 import math
 import random

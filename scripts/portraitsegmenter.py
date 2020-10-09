@@ -9,7 +9,7 @@ Created on Sat Sep 26 12:17:05 2020
 import torch
 from torch.nn import Sequential
 
-from layers import Conv, UpConv, UpConvUS, InvertedResidual, ResLayer
+from layers import Conv, UpConv, UpConvUS, InvertedResidual
 from layers import DWSConv, DWSConvT, ConvBNReLU, Layer131
 from torch.quantization import fuse_modules, QuantStub, DeQuantStub
 

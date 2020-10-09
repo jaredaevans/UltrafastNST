@@ -7,10 +7,8 @@ Modified from https://github.com/dong-x16/PortraitNet
 """
 import torch
 
-import os
 import cv2
 import numpy as np
-import random
 
 from PIL import Image
 

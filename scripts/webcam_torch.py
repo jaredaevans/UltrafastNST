@@ -47,7 +47,7 @@ def build_model(idkey):
                             quant=False,
                             bias_ll=True)
         model.eval()
-        #model.fuse()
+        model.fuse()
     elif idkey=='X':
         model = ImageTransformer(leak=0,
                             norm_type='batch',
@@ -226,9 +226,13 @@ def stylize_video(): #save_vid=False:
             mask1 = convert_mask(mask[0].permute(1,2,0).numpy(),maskThresh)
             # Open and the mask image
             #mask1 = cv2.morphologyEx(mask1, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
-            #mask1 = cv2.morphologyEx(mask1, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+            #mask1 = cv2.morphologyEx(mask1, cv2.MORPH_CLOSE, np.ones((2, 2), np.uint8))
             
             mask1 = cv2.resize(mask1, (640, 480), interpolation=cv2.INTER_LINEAR)
+            ellipse = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(20,20))
+            mask1 = cv2.morphologyEx(mask1, cv2.MORPH_CLOSE, ellipse)
+            
+            
             mask1 = convert_mask(mask1)
             
             # Create an inverted mask

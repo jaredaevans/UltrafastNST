@@ -297,7 +297,7 @@ class SegmentTrainer():
         self.focalloss = FocalLoss(gamma=2)
         self.KLloss = FocalLoss(gamma=1)
         self.JSloss = JSloss()
-        self.CEloss = torch.nn.BCEWithLogitsLoss()
+        self.CEloss = FocalLoss(gamma=0)
         
     def calcIOU(self, mask, mask_pred):
         """ use torch tensors with values of 0 or 1 """
