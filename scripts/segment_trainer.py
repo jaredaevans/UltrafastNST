@@ -82,6 +82,20 @@ class SegmentTrainer():
         sum2[sum2>=2] = 1
         y = torch.sum(sum2)
         return 1.0*(y/x).item()
+    
+    def update_history(self,history,epoch,losses,k,val_losses=None,vk=None):
+        """ record history information """
+        print('epoch: {} - Losses:: IoU: {:.3g} Mask: {:.3g} Edge: {:.3g}'.format(epoch + 1,  losses[2]/k, losses[0]/k, losses[1]/k))
+        history['total_loss'].append(sum(losses)/k)
+        history['mask_loss'].append((losses[0])/k)
+        history['edge_loss'].append((losses[1])/k)
+        history['IoU'].append((losses[2])/k)
+        if val_losses is not None:
+            print('   Validation Losses:: IoU: {:.3g} Mask: {:.3g} Edge: {:.3g}'.format(val_losses[2]/vk, val_losses[0]/vk, val_losses[1]/vk))
+            history['val_total_loss'].append(sum(val_losses)/vk)
+            history['val_mask_loss'].append((val_losses[0])/vk)
+            history['val_edge_loss'].append((val_losses[1])/vk)
+            history['val_IoU'].append((val_losses[2])/vk)
         
     def step(self,imgs,masks,edge,losses):
         """ take a step on gpu """
@@ -90,11 +104,6 @@ class SegmentTrainer():
         imgs = imgs.to(self.device)
         masks = masks.to(self.device)
         edge = edge.to(self.device)
-        
-        # add noise to image for stabilization
-        #noise = torch.zeros_like(imgs)
-        #noise.normal_(mean=0, std=0.016)
-        # get the content and content_style targets
 
         # forward + backward + optimize
         masks_pred, edge_pred = self.segmenter(imgs)
@@ -176,10 +185,14 @@ class SegmentTrainer():
             
         trainloader = torch.utils.data.DataLoader(data, batch_size=batch_size,
                                           shuffle=True, num_workers=num_workers)
+        history = {'total_loss': [],'mask_loss': [],'edge_loss': [], 'IoU': []}
         
         if val is not None:
             valloader = torch.utils.data.DataLoader(val, batch_size=batch_size,
                                           shuffle=False, num_workers=num_workers)
+            history = {'total_loss': [],'mask_loss': [],'edge_loss': [], 
+                       'IoU': [],'val_total_loss': [],'val_mask_loss': [],
+                       'val_edge_loss': [],'val_IoU': []}
             es = 0
             vl_best = 1e8
         
@@ -200,8 +213,8 @@ class SegmentTrainer():
                 loss.backward()
                 self.optimizer.step()
                 k += 1
-            num_ev = (k+1)*batch_size
-            print("  Training on {} images;  IoU = {}; Mask loss = {}; Edge loss = {}".format(num_ev,running_losses[2]/(k+1),running_losses[0]/(k+1),running_losses[1]/(k+1)))
+            #num_ev = (k+1)*batch_size
+            #print("  Training on {} images;  IoU = {}; Mask loss = {}; Edge loss = {}".format(num_ev,running_losses[2]/(k+1),running_losses[0]/(k+1),running_losses[1]/(k+1)))
             if val is not None:
                 val_losses = [0,0,0,0,0,0]
                 with torch.no_grad():
@@ -212,11 +225,11 @@ class SegmentTrainer():
                         imgs_ori, imgs, edges, masks = image_dat
                         loss = self.step(imgs, masks, edges, val_losses)
                         vk = i
-                    num_ev = (vk+1)*batch_size
-                    print("  Validation on {} images:  IoU = {}; Mask loss = {}; Edge loss = {}".format(num_ev,val_losses[2]/(vk+1),val_losses[0]/(vk+1),val_losses[1]/(vk+1)))
-                    #self.update_history(history,epoch,running_losses,k,
-                    #                    val_losses, vk)
-                    vl_cur = sum(val_losses)/vk             
+                    #num_ev = (vk+1)*batch_size
+                    #print("  Validation on {} images:  IoU = {}; Mask loss = {}; Edge loss = {}".format(num_ev,val_losses[2]/(vk+1),val_losses[0]/(vk+1),val_losses[1]/(vk+1)))
+                    self.update_history(history,epoch,running_losses,k,
+                                        val_losses, vk)
+                    vl_cur = -val_losses[2]/(vk+1)             
                     if vl_cur < vl_best:
                         vl_best = vl_cur
                         torch.save(self.segmenter.state_dict(), best_path)
@@ -228,4 +241,5 @@ class SegmentTrainer():
                     if es >= es_patience:
                         print("No improvement for {} epochs, ceasing training".format(es_patience))
                         break
+        return history
     

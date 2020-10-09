@@ -32,9 +32,19 @@ def build_model(idkey):
 
     """
     if idkey=='V':
-        model = ImageTransformer()
+        model = ImageTransformer(leak=0,
+                            norm_type='batch',
+                            DWS=True,DWSFL=False,
+                            outerK=3,resgroups=1,
+                            filters=[8,16,16],
+                            shuffle=False,
+                            blocks=[2,2,2,1,1],
+                            endgroups=(1,1),
+                            upkern=3,
+                            bias_ll=True)
         model.eval()
         model.fuse()
+        return model
     elif idkey=='W':
         model = ImageTransformer(leak=0,
                             norm_type='batch',
@@ -74,7 +84,7 @@ def build_model(idkey):
         model.eval()
         model.fuse()
     elif idkey=='A':
-        model = ImageTransformer(norm_type='inst',
+        model = ImageTransformer(norm_type='batch',
                                 DWS=False,
                                 outerK=9,
                                 resgroups=1,
@@ -94,9 +104,14 @@ def build_model(idkey):
     return model
 
 def build_seg_model():
+    """
     port_seg = PortraitSegmenter(down_depth=[1,2,2,2], up_depth=[1,1,1],
                                  filters=[16,24,32,48])
-    stored_file = "../models/portraitfocal.pth"
+    stored_file = "../models/portraitCE.pth"
+    """
+    port_seg = PortraitSegmenter(down_depth=[1,2,2], num_levels=3, up_depth=[1,1],
+                 filters=[16,24,32],endchannels=[8,1])
+    stored_file = "../models/portraitCElight.pth"
     port_seg.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
     port_seg.eval()
     port_seg.fuse()
@@ -112,7 +127,7 @@ def quantize_model(image_transformer):
     # convert to quantized version
     torch.quantization.convert(image_transformer, inplace=True)
     
-def convert_mask(mask, thresh=2.0):
+def convert_mask(mask, thresh=1.65):
     new = cv2.inRange(mask, thresh, 10000)
     return new
 
@@ -148,14 +163,15 @@ def stylize_video(): #save_vid=False:
     "gorky_liver_" '''
 
     bench_list = [
-        "scream_bench_", "bird_bench_", "comp7_bench_", "jazzcups_",
-        "dazzleships_", "comp7_", "monet_blue_", "gorky_artichoke_", 
-        "delauney_rythme_","taeuber-arp_composition_"
+        "scream_bench_", "bird_bench_", "comp7_bench_"
+        #, "jazzcups_",
+        #"dazzleships_", "comp7_", "monet_blue_", "gorky_artichoke_", 
+        #"delauney_rythme_","taeuber-arp_composition_"
     ]
     num_benches = len(bench_list)
     bench_id = 0
     
-    models_list = ['W','A','X','Y']
+    models_list = ['W','V','A']#,'X','Y']
     num_models = len(models_list)
     model_id = 0
     
@@ -176,6 +192,9 @@ def stylize_video(): #save_vid=False:
     segment_invert = False
     maskThresh = 2.0
     segmenter = build_seg_model()
+    
+    ellipse1 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(30,30))
+    ellipse2 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(10,10))
     
     timelist = []
     
@@ -222,18 +241,14 @@ def stylize_video(): #save_vid=False:
             seg_input = cv2.resize(img, (64, 48), interpolation=cv2.INTER_AREA)
             mask, edge = segmenter(torch.tensor(seg_input).permute(2,0,1).unsqueeze(0).to(dtype))
             t5 = time.time()
-            #mask=edge
             mask1 = convert_mask(mask[0].permute(1,2,0).numpy(),maskThresh)
-            # Open and the mask image
-            #mask1 = cv2.morphologyEx(mask1, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
-            #mask1 = cv2.morphologyEx(mask1, cv2.MORPH_CLOSE, np.ones((2, 2), np.uint8))
             
             mask1 = cv2.resize(mask1, (640, 480), interpolation=cv2.INTER_LINEAR)
-            ellipse = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(20,20))
-            mask1 = cv2.morphologyEx(mask1, cv2.MORPH_CLOSE, ellipse)
+            #mask1 = cv2.morphologyEx(mask1, cv2.MORPH_DILATE, ellipse1)
+            #mask1 = cv2.morphologyEx(mask1, cv2.MORPH_ERODE, ellipse2)
+            mask1 = cv2.morphologyEx(mask1, cv2.MORPH_CLOSE, ellipse1)
             
-            
-            mask1 = convert_mask(mask1)
+            mask1 = convert_mask(mask1,maskThresh)
             
             # Create an inverted mask
             mask2 = cv2.bitwise_not(mask1)

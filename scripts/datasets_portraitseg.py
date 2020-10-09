@@ -56,7 +56,7 @@ class PortraitSegDatasetAug(torch.utils.data.Dataset):
             bbox = [0, 0, width-1, height-1]
             H = aug_matrix(width, height, bbox, self.input_width, self.input_height,
                        angle_range=(-self.angle_range, self.angle_range), 
-                       scale_range=(1-self.zoom, 1+self.zoom), 
+                       scale_range=(self.zoom, 1/self.zoom), 
                        offset=self.input_height/4)
             
             border_col = (np.random.randint(0,255),np.random.randint(0,255),np.random.randint(0,255))
