@@ -188,7 +188,8 @@ class Trainer():
     def train(self,data,val=None,epochs=1000,style_weight=10,content_weight=1,
               tv_weight=100,color_weight=1000,cs_weight=10,stable_weight=5000,
               num_workers=0,batch_size=4,epoch_show = 20,lr=0.01,
-              best_path="best.pth",es_patience=5,test_image=None,test_im_show=5):
+              best_path="best.pth",es_patience=5,test_image=None,test_im_show=5,
+              equalize_style_layers=False):
         """ main training function """
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -201,16 +202,36 @@ class Trainer():
         self.stability_weight = stable_weight
         
         pass_sep = False
+        # Equalization of vgg level importance
+        if equalize_style_layers:
+            style_re_weighting = []
+            for i, style_layer in enumerate(self.style_losses):
+                target_gram = style_layer.target
+                style_re_weighting.append(torch.mean(target_gram).item())
+            print("Initial weights: {}".format(style_re_weighting))
+            max_target = max(style_re_weighting)
+            for i, weight in enumerate(style_re_weighting):
+                style_re_weighting[i] = max_target / weight
+            print("Re weights: {}".format(style_re_weighting))
+        else:
+            style_re_weighting = [1] * len(self.style_losses)
+                
         if type(style_weight) is tuple:
             if type(style_weight[0]) is tuple or len(style_weight)>2:
                 pass_sep = True
         if pass_sep:
             assert len(style_weight) == len(self.style_losses)
             for i, style_layer in enumerate(self.style_losses):
-                style_layer.new_weights(style_weight[i])
+                new_weight = tuple(x * style_re_weighting[i] for x in style_weight[i])
+                style_layer.new_weights(new_weight)
         else:
-            for style_layer in self.style_losses:
-                style_layer.new_weights(style_weight)
+            if type(style_weight) is int or type(style_weight) is float:
+                for i, style_layer in enumerate(self.style_losses):
+                    style_layer.new_weights(style_weight*style_re_weighting[i])
+            else:
+                for i, style_layer in enumerate(self.style_losses):
+                    new_weight = tuple(x * style_re_weighting[i] for x in style_weight)
+                    style_layer.new_weights(new_weight)
         
         # set the learning rate
         for param_group in self.optimizer.param_groups:

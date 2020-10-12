@@ -31,7 +31,7 @@ def build_model(idkey):
                     bias_ll=True)
 
     """
-    if idkey=='V':
+    if idkey=='V' or 'Z':
         model = ImageTransformer(leak=0,
                             norm_type='batch',
                             DWS=True,DWSFL=False,
@@ -131,12 +131,12 @@ def convert_mask(mask, thresh=1.65):
     new = cv2.inRange(mask, thresh, 10000)
     return new
 
-def stylize_video(): #save_vid=False:
+def stylize_video(save_vid=False):
 
     ## Preparation for writing the ouput video
-    #if save_vid:
-    #    fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    #    out = cv2.VideoWriter('output.avi', fourcc, 60.0, (640, 480))
+    if save_vid:
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        out = cv2.VideoWriter('output.avi', fourcc, 10.0, (640, 480))
 
     ##reading from the webcam
     cap = cv2.VideoCapture(0)
@@ -155,23 +155,23 @@ def stylize_video(): #save_vid=False:
     dir_path = "../models/"
 
 
-    ''' "bruegel_babel_", 
+    ''' 
     "bosch_tondal_",
     "delaunay_window_", 
-    "vanDoesburg_CompositionI_", 
+    
     
     "gorky_liver_" '''
 
     bench_list = [
-        "scream_bench_", "bird_bench_", "comp7_bench_"
-        #, "jazzcups_",
-        #"dazzleships_", "comp7_", "monet_blue_", "gorky_artichoke_", 
-        #"delauney_rythme_","taeuber-arp_composition_"
+        "jazzcups_", "scream_bench_", "bird_bench_", "comp7_bench_", "comp7_",
+        "dazzleships_",  "monet_blue_", "gorky_artichoke_", 
+        "delauney_rythme_","taeuber-arp_composition_","taeuber-arp_composition_x_",
+        "vanDoesburg_CompositionI_", "bruegel_babel_", 
     ]
     num_benches = len(bench_list)
     bench_id = 0
     
-    models_list = ['W','V','A']#,'X','Y']
+    models_list = ['Z','V'] #'W','A']#,'X','Y']
     num_models = len(models_list)
     model_id = 0
     
@@ -193,8 +193,8 @@ def stylize_video(): #save_vid=False:
     maskThresh = 2.0
     segmenter = build_seg_model()
     
-    ellipse1 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(30,30))
-    ellipse2 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(10,10))
+    ellipse1 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(10,10))
+    cross1 = cv2.getStructuringElement(cv2.MORPH_CROSS,(10,10))
     
     timelist = []
     
@@ -246,7 +246,7 @@ def stylize_video(): #save_vid=False:
             mask1 = cv2.resize(mask1, (640, 480), interpolation=cv2.INTER_LINEAR)
             #mask1 = cv2.morphologyEx(mask1, cv2.MORPH_DILATE, ellipse1)
             #mask1 = cv2.morphologyEx(mask1, cv2.MORPH_ERODE, ellipse2)
-            mask1 = cv2.morphologyEx(mask1, cv2.MORPH_CLOSE, ellipse1)
+            mask1 = cv2.morphologyEx(mask1, cv2.MORPH_CLOSE, cross1)
             
             mask1 = convert_mask(mask1,maskThresh)
             
@@ -278,6 +278,8 @@ def stylize_video(): #save_vid=False:
             if nf > 10:
                 timelist = timelist[1:]
         
+        if save_vid:
+            out.write(stybgr)
         cv2.imshow("video", stybgr)
         
         times[0] += t2 - t1
@@ -355,9 +357,11 @@ def stylize_video(): #save_vid=False:
     print("fps = {} - prep {}, eval {}, post {}, seg {}, postseg {}".format(
         count / (time.time()-t0),times[0],times[1],times[2],times[3],times[4]))
     cap.release()
+    if save_vid:
+        out.release()
     cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':
     with torch.no_grad():
-        stylize_video()
+        stylize_video(save_vid=False)
