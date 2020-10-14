@@ -31,7 +31,8 @@ def build_model(idkey):
                     bias_ll=True)
 
     """
-    if idkey=='V' or 'Z':
+    label = "Artiscope"
+    if idkey=='V' or idkey=='Z':
         model = ImageTransformer(leak=0,
                             norm_type='batch',
                             DWS=True,DWSFL=False,
@@ -44,45 +45,7 @@ def build_model(idkey):
                             bias_ll=True)
         model.eval()
         model.fuse()
-        return model
-    elif idkey=='W':
-        model = ImageTransformer(leak=0,
-                            norm_type='batch',
-                            DWS=False,DWSFL=False,
-                            outerK=3,resgroups=1,
-                            filters=[8,16,16],
-                            shuffle=False,
-                            blocks=[2,2,2,1,1,1],
-                            upkern=3,
-                            quant=False,
-                            bias_ll=True)
-        model.eval()
-        model.fuse()
-    elif idkey=='X':
-        model = ImageTransformer(leak=0,
-                            norm_type='batch',
-                            DWS=False,DWSFL=False,
-                            outerK=3,resgroups=1,
-                            filters=[8,16,16],
-                            shuffle=False,
-                            blocks=[2,2,1,1],
-                            upkern=3,
-                            quant=False,
-                            bias_ll=True)
-        model.eval()
-        #model.fuse()
-    elif idkey=='Y':
-        model = ImageTransformer(leak=0,
-                            norm_type='batch',
-                            DWS=False,DWSFL=False,
-                            outerK=3,resgroups=1,
-                            filters=[8,16,16],
-                            shuffle=False,
-                            blocks=[2,2,2,1,1],
-                            upkern=3,
-                            bias_ll=True)
-        model.eval()
-        model.fuse()
+        label = "Artiscope"
     elif idkey=='A':
         model = ImageTransformer(norm_type='batch',
                                 DWS=False,
@@ -92,6 +55,7 @@ def build_model(idkey):
                                 shuffle=False,
                                 blocks=[1,1,1,1,1])
         model.eval()
+        label = "Johnson et al"
     elif idkey=='C':
         model = ImageTransformer(norm_type='inst',
                                 DWS=False,
@@ -101,7 +65,8 @@ def build_model(idkey):
                                 shuffle=False,
                                 blocks=[1,1,1,1])
         model.eval()
-    return model
+        label = "Kunster"
+    return model, label
 
 def build_seg_model():
     """
@@ -136,7 +101,7 @@ def stylize_video(save_vid=False):
     ## Preparation for writing the ouput video
     if save_vid:
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        out = cv2.VideoWriter('output.avi', fourcc, 10.0, (640, 480))
+        vidout = cv2.VideoWriter('output.avi', fourcc, 10.0, (640, 480))
 
     ##reading from the webcam
     cap = cv2.VideoCapture(0)
@@ -144,11 +109,17 @@ def stylize_video(save_vid=False):
     times = [0, 0, 0, 0, 0]
     count = 0
     
-    # fps text info
+    # common text info
     font = cv2.FONT_HERSHEY_TRIPLEX
-    org = (440, 460) 
     fontScale = 1
-    color = (0, 0.5, 0.8) 
+    
+    # fps text info
+    fps_org = (440, 460) 
+    fps_color = (0, 0.0, 0.8) 
+    
+    # label text info
+    label_org = (10,30)
+    label_color = (0, 0.0, 0.8)
     
     isHalf = False
     
@@ -156,22 +127,23 @@ def stylize_video(save_vid=False):
 
 
     ''' 
-    "bosch_tondal_",
+    
     "delaunay_window_", 
     
     
     "gorky_liver_" '''
 
     bench_list = [
-        "jazzcups_", "scream_bench_", "bird_bench_", "comp7_bench_", "comp7_",
+        "scream_bench_", "bird_bench_", "comp7_bench_", "comp7_",
         "dazzleships_",  "monet_blue_", "gorky_artichoke_", 
-        "delauney_rythme_","taeuber-arp_composition_","taeuber-arp_composition_x_",
-        "vanDoesburg_CompositionI_", "bruegel_babel_", 
+        "delauney_rythme_","taeuber-arp_composition_",
+        "vanDoesburg_CompositionI_", "bruegel_babel_", "delaunay_window_",
+        "bosch_tondal_","jazzcups_", 
     ]
     num_benches = len(bench_list)
     bench_id = 0
     
-    models_list = ['Z','V'] #'W','A']#,'X','Y']
+    models_list = ['V','Z','A'] #'C','A']
     num_models = len(models_list)
     model_id = 0
     
@@ -183,7 +155,7 @@ def stylize_video(save_vid=False):
     stored_file = dir_path + bench_base + model_base + model_tail
     print("Loading: " + stored_file)
     
-    model = build_model(model_base)
+    model, label = build_model(model_base)
     model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
     model.eval()
     model.fuse()
@@ -274,12 +246,13 @@ def stylize_video(save_vid=False):
         nf = len(timelist)
         if nf > 3:
             text = "fps: {:0.3g}".format((nf-1)/(timelist[-1]-timelist[0]))
-            stybgr = cv2.putText(stybgr,text,org,font,fontScale,color) 
+            stybgr = cv2.putText(stybgr,text,fps_org,font,fontScale,fps_color)
+            stybgr = cv2.putText(stybgr,label,label_org,font,fontScale,label_color) 
             if nf > 10:
                 timelist = timelist[1:]
         
         if save_vid:
-            out.write(stybgr)
+            vidout.write(np.uint8(stybgr))
         cv2.imshow("video", stybgr)
         
         times[0] += t2 - t1
@@ -300,7 +273,7 @@ def stylize_video(save_vid=False):
             model_base = models_list[model_id]
             stored_file = dir_path + bench_base + model_base + model_tail
             print("Loading: " + stored_file)
-            model = build_model(model_base)
+            model, label = build_model(model_base)
             if model_base[-1] == "q":
                 quantize_model(model)
             elif model_base[-1] == "h":
@@ -318,7 +291,7 @@ def stylize_video(save_vid=False):
             model_base = models_list[model_id]
             stored_file = dir_path + bench_base + model_base + model_tail
             print("Loading: " + stored_file)
-            model = build_model(model_base)
+            model, label = build_model(model_base)
             if model_base[-1] == "q":
                 quantize_model(model)
             elif model_base[-1] == "h":
@@ -358,7 +331,7 @@ def stylize_video(save_vid=False):
         count / (time.time()-t0),times[0],times[1],times[2],times[3],times[4]))
     cap.release()
     if save_vid:
-        out.release()
+        vidout.release()
     cv2.destroyAllWindows()
 
 
