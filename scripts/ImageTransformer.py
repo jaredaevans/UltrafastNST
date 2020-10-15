@@ -29,7 +29,7 @@ class ImageTransformer(torch.nn.Module):
                  outerK=3,resgroups=1,
                  filters=[8,16,16],
                  shuffle=False,
-                 blocks=[2,2,2,1,1,1],
+                 blocks=[2,2,2,1,1],
                  endgroups=(1,1),
                  upkern=3,
                  bias_ll=True,

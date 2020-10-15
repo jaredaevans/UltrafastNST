@@ -18,17 +18,16 @@ def build_model(idkey):
     """
     Default parameters:
     ImageTransformer(leak=0,
-                    norm_type='batch',
-                    DWS=True,
-                    DWSFL=False,
-                    outerK=3,
-                    resgroups=4,
-                    filters=[8,16,16],
-                    shuffle=True,
-                    blocks=[2,2,2,1,1,1],
-                    endgroups=(1,1),
-                    upkern=4,
-                    bias_ll=True)
+                     norm_type='batch',
+                     DWS=True,DWSFL=False,
+                     outerK=3,resgroups=1,
+                     filters=[8,16,16],
+                     shuffle=False,
+                     blocks=[2,2,2,1,1],
+                     endgroups=(1,1),
+                     upkern=3,
+                     bias_ll=True,
+                     quant=False)
 
     """
     label = "Artiscope"
@@ -102,12 +101,14 @@ def stylize_video(save_vid=False):
     if save_vid:
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
         vidout = cv2.VideoWriter('output.avi', fourcc, 10.0, (640, 480))
+    isRecording = False
 
     ##reading from the webcam
     cap = cv2.VideoCapture(0)
 
     times = [0, 0, 0, 0, 0]
     count = 0
+    pic_count = 0
     
     # common text info
     font = cv2.FONT_HERSHEY_TRIPLEX
@@ -124,14 +125,6 @@ def stylize_video(save_vid=False):
     isHalf = False
     
     dir_path = "../models/"
-
-
-    ''' 
-    
-    "delaunay_window_", 
-    
-    
-    "gorky_liver_" '''
 
     bench_list = [
         "scream_bench_", "bird_bench_", "comp7_bench_", "comp7_",
@@ -158,7 +151,6 @@ def stylize_video(save_vid=False):
     model, label = build_model(model_base)
     model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
     model.eval()
-    model.fuse()
     
     will_segment = False
     segment_invert = False
@@ -241,6 +233,7 @@ def stylize_video(save_vid=False):
             
             # Generating the final output and writing
             stybgr = cv2.addWeighted(res1, 1, res2, 1, 0)
+            stybgr = stybgr.astype(np.float)/255.
             
         
         nf = len(timelist)
@@ -251,8 +244,8 @@ def stylize_video(save_vid=False):
             if nf > 10:
                 timelist = timelist[1:]
         
-        if save_vid:
-            vidout.write(np.uint8(stybgr))
+        if save_vid and isRecording:
+            vidout.write(np.uint8(stybgr*255))
         cv2.imshow("video", stybgr)
         
         times[0] += t2 - t1
@@ -327,6 +320,13 @@ def stylize_video(save_vid=False):
             maskThresh *= 0.9
         elif keypress == ord('c'):
             maskThresh *= 1.1
+        elif keypress == ord('g'):
+            filename = "out_im_{}.jpg".format(pic_count)
+            print("Saving frame as {}".format(filename))
+            cv2.imwrite(filename,stybgr*255) 
+            pic_count += 1
+        elif keypress == ord('t'):
+            isRecording = not isRecording
     print("fps = {} - prep {}, eval {}, post {}, seg {}, postseg {}".format(
         count / (time.time()-t0),times[0],times[1],times[2],times[3],times[4]))
     cap.release()
