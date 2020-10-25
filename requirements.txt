@@ -1,0 +1,5 @@
+# To install these Python dependencies, please type:
+# pip install -r requirements.txt
+torch>=1.6.0
+opencv-python>=4.4.0
+

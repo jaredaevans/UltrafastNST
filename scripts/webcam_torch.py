@@ -54,17 +54,7 @@ def build_model(idkey):
                                 shuffle=False,
                                 blocks=[1,1,1,1,1])
         model.eval()
-        label = "Johnson et al"
-    elif idkey=='C':
-        model = ImageTransformer(norm_type='inst',
-                                DWS=False,
-                                outerK=3,
-                                resgroups=1,
-                                filters=[16,24,32],
-                                shuffle=False,
-                                blocks=[1,1,1,1])
-        model.eval()
-        label = "Kunster"
+        label = "Gold standard"
     return model, label
 
 def build_seg_model():
@@ -82,15 +72,6 @@ def build_seg_model():
     port_seg.eval()
     return port_seg
     
-def quantize_model(image_transformer):
-    """ Convert model to quantized version """
-    image_transformer.qconfig = torch.quantization.get_default_qconfig('fbgemm')
-    # insert observers
-    torch.quantization.prepare(image_transformer, inplace=True)
-    # Calibrate the model and collect statistics
-    # convert to quantized version
-    torch.quantization.convert(image_transformer, inplace=True)
-    
 def convert_mask(mask, thresh=1.65):
     new = cv2.inRange(mask, thresh, 10000)
     return new
@@ -99,8 +80,8 @@ def stylize_video(save_vid=False):
 
     ## Preparation for writing the ouput video
     if save_vid:
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        vidout = cv2.VideoWriter('output.avi', fourcc, 10.0, (640, 480))
+        fourcc = cv2.VideoWriter_fourcc(*'MP4V')
+        vidout = cv2.VideoWriter('output.mp4', fourcc, 10.0, (640, 480))
     isRecording = False
 
     ##reading from the webcam
@@ -120,7 +101,8 @@ def stylize_video(save_vid=False):
     
     # label text info
     label_org = (10,30)
-    label_color = (0, 0.0, 0.8)
+    label_org_2 = (10,460)
+    label_color = (0,0.0, 0.8)
     
     isHalf = False
     
@@ -133,10 +115,11 @@ def stylize_video(save_vid=False):
         "vanDoesburg_CompositionI_", "bruegel_babel_", "delaunay_window_",
         "bosch_tondal_","jazzcups_", 
     ]
+    
     num_benches = len(bench_list)
     bench_id = 0
     
-    models_list = ['V','Z','A'] #'C','A']
+    models_list = ['V','Z']#,'A']
     num_models = len(models_list)
     model_id = 0
     
@@ -154,7 +137,7 @@ def stylize_video(save_vid=False):
     
     will_segment = False
     segment_invert = False
-    maskThresh = 2.0
+    maskThresh = 2.4
     segmenter = build_seg_model()
     
     ellipse1 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(10,10))
@@ -241,6 +224,8 @@ def stylize_video(save_vid=False):
             text = "fps: {:0.3g}".format((nf-1)/(timelist[-1]-timelist[0]))
             stybgr = cv2.putText(stybgr,text,fps_org,font,fontScale,fps_color)
             stybgr = cv2.putText(stybgr,label,label_org,font,fontScale,label_color) 
+            if model_base == 'A':
+                stybgr = cv2.putText(stybgr,"Johnson et al",label_org_2,font,fontScale,label_color) 
             if nf > 10:
                 timelist = timelist[1:]
         
@@ -254,6 +239,7 @@ def stylize_video(save_vid=False):
         times[3] += t5 - t4
         times[4] += time.time() - t5
 
+        # Long series of key press commands.  Not proud of this code...
         keypress = cv2.waitKey(1)
         if keypress == ord('q'):
             # q to quit
@@ -267,13 +253,6 @@ def stylize_video(save_vid=False):
             stored_file = dir_path + bench_base + model_base + model_tail
             print("Loading: " + stored_file)
             model, label = build_model(model_base)
-            if model_base[-1] == "q":
-                quantize_model(model)
-            elif model_base[-1] == "h":
-                model.half()
-                isHalf = True
-            else:
-                isHalf = False
             model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
             model.eval()    
         elif keypress == ord('a'):
@@ -285,13 +264,6 @@ def stylize_video(save_vid=False):
             stored_file = dir_path + bench_base + model_base + model_tail
             print("Loading: " + stored_file)
             model, label = build_model(model_base)
-            if model_base[-1] == "q":
-                quantize_model(model)
-            elif model_base[-1] == "h":
-                model.half()
-                isHalf = True
-            else:
-                isHalf = False
             model.load_state_dict(torch.load(stored_file, map_location=torch.device('cpu')))
             model.eval() 
         elif keypress == ord('w'):

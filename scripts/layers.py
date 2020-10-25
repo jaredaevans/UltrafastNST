@@ -275,18 +275,6 @@ class UpConvUS(torch.nn.Module):
         return out
 
 
-class SE(torch.nn.Module):
-    """ Squeeze and excite layer
-    """
-    def __init__(self, channels):
-        super().__init__()
-        self.conv2d = torch.nn.AvgPool2d()
-
-    def forward(self, ins):
-        """ forward pass """
-        return self.conv2d(ins)
-
-
 class ResLayer(torch.nn.Module):
     """ Basic residual layer to import into ImageTransformer
     """
