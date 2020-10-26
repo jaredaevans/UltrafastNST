@@ -5,6 +5,7 @@ A ultrafast neural network to perform style-transfer on real-time video over a C
 - Clone repository
 - PyTorch>=1.6.0 
 - OpenCV>=4.4.0
+- Note: Windows users may need to follow [these instructions to install pytorch](https://stackoverflow.com/questions/47754749/how-to-install-pytorch-in-windows)
 
 ## To run:
 ./webcam_torch.py
